@@ -1,0 +1,14 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "adspower>=2.1.0",
+    "pandas>=2.3.2",
+    "requests>=2.32.5",
+    "selenium>=4.35.0",
+    "selenium-stealth>=1.0.6",
+    "undetected-chromedriver>=3.5.5",
+    "webdriver-manager>=4.0.2",
+]
