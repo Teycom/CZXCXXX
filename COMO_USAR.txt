@@ -1,0 +1,38 @@
+GOOGLE ADS CAMPAIGN BOT - INSTRUÇÕES COMPLETAS
+================================================
+
+✅ O QUE O BOT FAZ:
+- Conecta automaticamente com perfis do AdsPower
+- Cria campanhas do Google Ads em múltiplos perfis
+- Interface gráfica completa em português
+- NÃO precisa de API keys do Google Ads
+
+⚠️ REQUISITOS NO SEU PC:
+1. Python 3.11 ou superior instalado
+2. AdsPower aberto e rodando
+3. API local do AdsPower habilitada (Configurações > Local API)
+4. Perfis já logados no Google Ads
+
+📦 INSTALAÇÃO:
+1. Baixe a pasta "src" para o seu PC
+2. Abra o prompt de comando na pasta
+3. Execute: pip install -r requirements.txt
+4. Execute: python main.py
+
+🚀 COMO USAR:
+1. Abra o AdsPower primeiro
+2. Execute o bot: python main.py
+3. Configure sua campanha na interface
+4. Selecione os perfis desejados
+5. Clique "Iniciar Automação"
+
+⚙️ CONFIGURAÇÃO DO ADSPOWER:
+- Vá em Configurações > Local API
+- Marque "Habilitar API Local"
+- Porta padrão: 50325
+
+🔧 SE TIVER PROBLEMAS:
+- Verifique se o AdsPower está aberto
+- Verifique se a API local está habilitada
+- Verifique se os perfis estão logados no Google Ads
+- Verifique os logs na pasta "logs" dentro do programa
