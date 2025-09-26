@@ -31,21 +31,96 @@ class GoogleAdsAutomation:
         # Configurações padrão
         self.default_timeout = 30
         self.default_delay = 3
+        self.max_retries = 3
+        self.retry_delay = 2
+        self.current_language = 'auto'  # Detectar automaticamente
         
-        # Seletores CSS/XPath para elementos do Google Ads
-        self.selectors = {
-            'new_campaign_btn': "//button[contains(text(), 'Nova campanha')] | //button[contains(text(), 'New campaign')]",
-            'campaign_objective': "//div[contains(@class, 'campaign-objective')]",
-            'campaign_type_search': "//div[contains(text(), 'Pesquisa')] | //div[contains(text(), 'Search')]",
-            'campaign_name_input': "input[data-test-id='campaign-name-input']",
-            'budget_input': "input[data-test-id='budget-input']",
-            'location_input': "input[data-test-id='location-input']",
-            'keyword_input': "input[data-test-id='keyword-input']",
-            'ad_headline_input': "input[data-test-id='headline-input']",
-            'ad_description_input': "textarea[data-test-id='description-input']",
-            'final_url_input': "input[data-test-id='final-url-input']",
-            'save_continue_btn': "//button[contains(text(), 'Salvar e continuar')] | //button[contains(text(), 'Save and continue')]",
-            'publish_btn': "//button[contains(text(), 'Publicar')] | //button[contains(text(), 'Publish')]"
+        # Seletores multilíngues super robustos - Português, Inglês, Espanhol
+        self.multilingual_selectors = {
+            'campaigns_menu': {
+                'pt': ["//span[contains(text(), 'Campanhas')]", "//a[contains(text(), 'Campanhas')]", "//div[contains(@data-value, 'campaigns')]"],
+                'en': ["//span[contains(text(), 'Campaigns')]", "//a[contains(text(), 'Campaigns')]", "//div[contains(@data-value, 'campaigns')]"],
+                'es': ["//span[contains(text(), 'Campañas')]", "//a[contains(text(), 'Campañas')]", "//div[contains(@data-value, 'campaigns')]"]
+            },
+            'new_campaign_btn': {
+                'pt': ["//button[contains(@aria-label, 'Nova campanha')]", "//button[contains(text(), '+')]", "//button[contains(@class, 'mdc-fab')]", "//button[contains(@class, 'create')]"],
+                'en': ["//button[contains(@aria-label, 'New campaign')]", "//button[contains(text(), '+')]", "//button[contains(@class, 'mdc-fab')]", "//button[contains(@class, 'create')]"],
+                'es': ["//button[contains(@aria-label, 'Nueva campaña')]", "//button[contains(text(), '+')]", "//button[contains(@class, 'mdc-fab')]", "//button[contains(@class, 'create')]"]
+            },
+            'objectives': {
+                'sem_orientacao': {
+                    'pt': ["//button[contains(text(), 'sem orientação')]", "//div[contains(text(), 'sem orientação')]", "//button[contains(text(), 'Criar campanha sem orientação')]"],
+                    'en': ["//button[contains(text(), 'without goal')]", "//div[contains(text(), 'without goal')]", "//button[contains(text(), 'Create campaign without goal')]"],
+                    'es': ["//button[contains(text(), 'sin orientación')]", "//div[contains(text(), 'sin orientación')]", "//button[contains(text(), 'Crear campaña sin orientación')]"]
+                },
+                'vendas': {
+                    'pt': ["//div[contains(text(), 'Vendas')]", "//button[contains(text(), 'Vendas')]"],
+                    'en': ["//div[contains(text(), 'Sales')]", "//button[contains(text(), 'Sales')]"],
+                    'es': ["//div[contains(text(), 'Ventas')]", "//button[contains(text(), 'Ventas')]"]
+                },
+                'leads': {
+                    'pt': ["//div[contains(text(), 'Leads')]", "//button[contains(text(), 'Leads')]"],
+                    'en': ["//div[contains(text(), 'Leads')]", "//button[contains(text(), 'Leads')]"],
+                    'es': ["//div[contains(text(), 'Clientes potenciales')]", "//button[contains(text(), 'Leads')]"]
+                },
+                'trafego': {
+                    'pt': ["//div[contains(text(), 'Tráfego do site')]", "//div[contains(text(), 'Tráfego do website')]"],
+                    'en': ["//div[contains(text(), 'Website traffic')]", "//div[contains(text(), 'Traffic')]"],
+                    'es': ["//div[contains(text(), 'Tráfico del sitio web')]", "//div[contains(text(), 'Tráfico')]"]
+                }
+            },
+            'search_network': {
+                'pt': ["//div[contains(text(), 'Pesquisa')]", "//button[contains(text(), 'Pesquisa')]", "//div[contains(text(), 'Rede de Pesquisa')]"],
+                'en': ["//div[contains(text(), 'Search')]", "//button[contains(text(), 'Search')]", "//div[contains(text(), 'Search Network')]"],
+                'es': ["//div[contains(text(), 'Búsqueda')]", "//button[contains(text(), 'Búsqueda')]", "//div[contains(text(), 'Red de Búsqueda')]"]
+            },
+            'continue_btn': {
+                'pt': ["//button[contains(text(), 'Continuar')]", "//button[contains(text(), 'Próximo')]", "//button[contains(@aria-label, 'Continuar')]"],
+                'en': ["//button[contains(text(), 'Continue')]", "//button[contains(text(), 'Next')]", "//button[contains(@aria-label, 'Continue')]"],
+                'es': ["//button[contains(text(), 'Continuar')]", "//button[contains(text(), 'Siguiente')]", "//button[contains(@aria-label, 'Continuar')]"]
+            },
+            'publish_btn': {
+                'pt': ["//button[contains(text(), 'Publicar')]", "//button[contains(text(), 'Criar campanha')]", "//button[contains(text(), 'Finalizar')]"],
+                'en': ["//button[contains(text(), 'Publish')]", "//button[contains(text(), 'Create campaign')]", "//button[contains(text(), 'Finish')]"],
+                'es': ["//button[contains(text(), 'Publicar')]", "//button[contains(text(), 'Crear campaña')]", "//button[contains(text(), 'Finalizar')]"]
+            },
+            'input_fields': {
+                'campaign_name': {
+                    'pt': ["//input[contains(@aria-label, 'nome')]", "//input[contains(@placeholder, 'nome')]"],
+                    'en': ["//input[contains(@aria-label, 'name')]", "//input[contains(@placeholder, 'name')]"],
+                    'es': ["//input[contains(@aria-label, 'nombre')]", "//input[contains(@placeholder, 'nombre')]"]
+                },
+                'budget': {
+                    'pt': ["//input[contains(@aria-label, 'orçamento')]", "//input[contains(@placeholder, 'orçamento')]"],
+                    'en': ["//input[contains(@aria-label, 'budget')]", "//input[contains(@placeholder, 'budget')]"],
+                    'es': ["//input[contains(@aria-label, 'presupuesto')]", "//input[contains(@placeholder, 'presupuesto')]"]
+                },
+                'location': {
+                    'pt': ["//input[contains(@aria-label, 'localização')]", "//input[contains(@placeholder, 'localização')]"],
+                    'en': ["//input[contains(@aria-label, 'location')]", "//input[contains(@placeholder, 'location')]"],
+                    'es': ["//input[contains(@aria-label, 'ubicación')]", "//input[contains(@placeholder, 'ubicación')]"]
+                },
+                'keywords': {
+                    'pt': ["//textarea[contains(@aria-label, 'palavra')]", "//input[contains(@aria-label, 'palavra')]"],
+                    'en': ["//textarea[contains(@aria-label, 'keyword')]", "//input[contains(@aria-label, 'keyword')]"],
+                    'es': ["//textarea[contains(@aria-label, 'palabra clave')]", "//input[contains(@aria-label, 'palabra clave')]"]
+                },
+                'headlines': {
+                    'pt': ["//input[contains(@aria-label, 'Título')]", "//input[contains(@placeholder, 'Título')]"],
+                    'en': ["//input[contains(@aria-label, 'Headline')]", "//input[contains(@placeholder, 'Headline')]"],
+                    'es': ["//input[contains(@aria-label, 'Título')]", "//input[contains(@placeholder, 'Título')]"]
+                },
+                'descriptions': {
+                    'pt': ["//textarea[contains(@aria-label, 'Descrição')]", "//textarea[contains(@placeholder, 'Descrição')]"],
+                    'en': ["//textarea[contains(@aria-label, 'Description')]", "//textarea[contains(@placeholder, 'Description')]"],
+                    'es': ["//textarea[contains(@aria-label, 'Descripción')]", "//textarea[contains(@placeholder, 'Descripción')]"]
+                },
+                'url': {
+                    'pt': ["//input[contains(@aria-label, 'URL')]", "//input[contains(@placeholder, 'URL')]"],
+                    'en': ["//input[contains(@aria-label, 'URL')]", "//input[contains(@placeholder, 'URL')]"],
+                    'es': ["//input[contains(@aria-label, 'URL')]", "//input[contains(@placeholder, 'URL')]"]
+                }
+            }
         }
     
     def setup_driver(self, browser_info: Dict, headless: bool = False) -> bool:
@@ -339,136 +414,123 @@ class GoogleAdsAutomation:
             return False
     
     def step_1_2_start_new_campaign(self) -> bool:
-        """PASSO 1-2: Clicar em Campanhas no menu lateral e no botão (+) Nova campanha"""
+        """PASSO 1-2: 🚀 Navegação SUPER ROBUSTA para Nova Campanha"""
         try:
-            self.logger.info("📋 PASSO 1-2: Navegando para seção Campanhas...")
+            self.logger.info("🚀 PASSO 1-2: Navegação multilíngue para Nova Campanha...")
             
-            # Primeiro, clicar no menu Campanhas (se necessário)
-            campaigns_menu_selectors = [
-                "//span[contains(text(), 'Campanhas')]",
-                "//a[contains(text(), 'Campanhas')]",
-                "//div[contains(@data-value, 'campaigns')]",
-                "//button[contains(@aria-label, 'Campanhas')]"
-            ]
+            # Detectar idioma da interface automaticamente
+            self.detect_interface_language()
             
-            for selector in campaigns_menu_selectors:
-                if self.click_element_safe(selector):
-                    self.logger.info("✅ Clicou na seção Campanhas")
-                    break
+            # Passo 1: Clicar no menu Campanhas (multilíngue)
+            def click_campaigns_menu():
+                return self.try_multilingual_click('campaigns_menu')
             
-            time.sleep(2)
+            self.smart_wait_and_retry(click_campaigns_menu, 3, "Clique no menu Campanhas")
             
-            # Clicar no botão de adição (+) para Nova campanha
-            new_campaign_selectors = [
-                "//button[contains(@aria-label, 'Nova campanha')] | //button[contains(@aria-label, 'New campaign')]",
-                "//button[contains(text(), '+')]",
-                "//button[contains(@data-value, 'new-campaign')]",
-                "//div[contains(@class, 'create-button')]//button",
-                "//button[contains(@class, 'mdc-fab')]",
-                "//button[contains(@class, 'create')]"
-            ]
+            # Passo 2: Clicar no botão Nova Campanha (multilíngue)
+            def click_new_campaign():
+                return self.try_multilingual_click('new_campaign_btn')
             
-            for selector in new_campaign_selectors:
-                if self.click_element_safe(selector):
-                    self.logger.info("✅ Clicou no botão (+) Nova campanha")
-                    self.wait_for_page_load()
-                    return True
+            if self.smart_wait_and_retry(click_new_campaign, 5, "Clique no botão Nova Campanha"):
+                self.logger.info("🎉 PASSO 1-2 COMPLETADO COM SUCESSO!")
+                return True
             
-            self.logger.error("❌ Não foi possível encontrar botão Nova Campanha")
+            self.logger.error("💥 FALHA TOTAL no PASSO 1-2")
             return False
             
         except Exception as e:
-            self.logger.error(f"Erro no PASSO 1-2: {str(e)}")
+            self.logger.error(f"❌ Erro no PASSO 1-2: {str(e)}")
             return False
     
     def step_3_choose_campaign_objective(self, config: Dict) -> bool:
-        """PASSO 3: Escolher objetivo - APENAS os 4 que suportam campanha de pesquisa"""
+        """PASSO 3: 🎯 Seleção MULTILÍNGUE dos 4 objetivos que suportam pesquisa"""
         try:
-            self.logger.info("🎯 PASSO 3: Escolhendo objetivo (apenas os que suportam pesquisa)...")
+            self.logger.info("🎯 PASSO 3: Seleção multilíngue de objetivo (APENAS pesquisa)...")
             
-            # APENAS os 4 objetivos que suportam campanha de pesquisa (conforme esclarecimento)
-            search_campaign_objectives = [
-                # PRIORIDADE: Sem orientação (conforme instrução anterior)
-                "//button[contains(text(), 'Criar campanha sem orientação')] | //button[contains(text(), 'Create campaign without goal')] | //button[contains(text(), 'sem orientação')] | //button[contains(text(), 'without goal')]",
-                "//div[contains(text(), 'sem orientação')] | //div[contains(text(), 'without goal')] | //div[contains(text(), 'Criar campanha sem orientação')]",
-                
-                # Os 3 objetivos específicos que suportam pesquisa
-                "//div[contains(text(), 'Vendas')] | //div[contains(text(), 'Sales')]",
-                "//div[contains(text(), 'Leads')] | //div[contains(text(), 'Leads')]", 
-                "//div[contains(text(), 'Tráfego do site')] | //div[contains(text(), 'Website traffic')] | //div[contains(text(), 'Tráfego do website')]"
-            ]
+            # Prioridade 1: SEM ORIENTAÇÃO (conforme instrução do usuário)
+            def try_sem_orientacao():
+                return self.try_multilingual_click('objectives', 'sem_orientacao')
             
-            # Tentar cada objetivo (prioridade: sem orientação → vendas → leads → tráfego)
-            for i, selector in enumerate(search_campaign_objectives):
-                if self.click_element_safe(selector):
-                    objective_names = ["Sem orientação", "Vendas", "Leads", "Tráfego do site"]
-                    self.logger.info(f"✅ Objetivo selecionado: {objective_names[min(i, len(objective_names)-1)]}")
-                    self.wait_for_page_load()
-                    return True
+            if self.smart_wait_and_retry(try_sem_orientacao, 3, "Seleção: SEM ORIENTAÇÃO"):
+                self.logger.info("🚀 OBJETIVO SELECIONADO: SEM ORIENTAÇÃO (PRIORIDADE)")
+                return True
             
-            # Se nenhum dos 4 objetivos foi encontrado, não é possível criar campanha de pesquisa
-            self.logger.warning("⚠️ Nenhum dos 4 objetivos que suportam pesquisa foi encontrado")
-            return True  # Continua mesmo assim para tentar
+            # Prioridade 2: VENDAS
+            def try_vendas():
+                return self.try_multilingual_click('objectives', 'vendas')
+            
+            if self.smart_wait_and_retry(try_vendas, 3, "Seleção: VENDAS"):
+                self.logger.info("💰 OBJETIVO SELECIONADO: VENDAS")
+                return True
+            
+            # Prioridade 3: LEADS
+            def try_leads():
+                return self.try_multilingual_click('objectives', 'leads')
+            
+            if self.smart_wait_and_retry(try_leads, 3, "Seleção: LEADS"):
+                self.logger.info("📧 OBJETIVO SELECIONADO: LEADS")
+                return True
+            
+            # Prioridade 4: TRÁFEGO DO SITE
+            def try_trafego():
+                return self.try_multilingual_click('objectives', 'trafego')
+            
+            if self.smart_wait_and_retry(try_trafego, 3, "Seleção: TRÁFEGO"):
+                self.logger.info("🌐 OBJETIVO SELECIONADO: TRÁFEGO DO SITE")
+                return True
+            
+            # Se não encontrou nenhum dos 4, continuar mesmo assim
+            self.logger.warning("⚠️ Nenhum dos 4 objetivos encontrado, mas continuando...")
+            return True
             
         except Exception as e:
-            self.logger.error(f"Erro no PASSO 3: {str(e)}")
+            self.logger.error(f"❌ Erro no PASSO 3: {str(e)}")
             return False
     
     def step_4_select_search_network(self) -> bool:
-        """PASSO 4: Selecionar o tipo de campanha 'Rede de Pesquisa'"""
+        """PASSO 4: 🔍 Seleção MULTILÍNGUE da Rede de Pesquisa"""
         try:
-            self.logger.info("🔍 PASSO 4: Selecionando Rede de Pesquisa...")
+            self.logger.info("🔍 PASSO 4: Seleção multilíngue da Rede de Pesquisa...")
             
-            search_network_selectors = [
-                "//div[contains(text(), 'Pesquisa')] | //div[contains(text(), 'Search')]",
-                "//button[contains(text(), 'Pesquisa')] | //button[contains(text(), 'Search')]",
-                "//div[contains(@class, 'campaign-type')]//div[contains(text(), 'Pesquisa')]",
-                "//div[contains(@data-value, 'search')]"
-            ]
+            def select_search_network():
+                return self.try_multilingual_click('search_network')
             
-            for selector in search_network_selectors:
-                if self.click_element_safe(selector):
-                    self.logger.info("✅ Rede de Pesquisa selecionada")
-                    self.wait_for_page_load()
-                    return True
+            if self.smart_wait_and_retry(select_search_network, 5, "Seleção da Rede de Pesquisa"):
+                self.logger.info("🎉 REDE DE PESQUISA SELECIONADA COM SUCESSO!")
+                return True
             
-            self.logger.error("❌ Não foi possível selecionar Rede de Pesquisa")
+            self.logger.error("💥 FALHA TOTAL: Não foi possível selecionar Rede de Pesquisa")
             return False
             
         except Exception as e:
-            self.logger.error(f"Erro no PASSO 4: {str(e)}")
+            self.logger.error(f"❌ Erro no PASSO 4: {str(e)}")
             return False
     
     def step_5_define_campaign_name(self, config: Dict) -> bool:
-        """PASSO 5: Definir nome descritivo da campanha - PULA se não estiver preenchido"""
+        """PASSO 5: 📝 Definição MULTILÍNGUE do nome da campanha"""
         try:
-            self.logger.info("📝 PASSO 5: Definindo nome da campanha...")
+            self.logger.info("📝 PASSO 5: Definição multilíngue do nome da campanha...")
             
             campaign_name = config.get('campaign_name', '').strip()
             
             # SE NÃO ESTIVER PREENCHIDO, PULAR (conforme instrução)
             if not campaign_name:
                 self.logger.info("⚠️ Nome da campanha não preenchido - PULANDO PASSO 5")
-                return True  # Continua mesmo sem preencher
+                return True
             
-            name_selectors = [
-                "//input[contains(@aria-label, 'nome')] | //input[contains(@aria-label, 'name')]",
-                "//input[contains(@placeholder, 'nome')] | //input[contains(@placeholder, 'name')]",
-                "//input[contains(@id, 'campaign-name')]",
-                "//input[contains(@data-testid, 'campaign-name')]"
-            ]
+            def input_campaign_name():
+                return self.try_multilingual_input('campaign_name', campaign_name)
             
-            for selector in name_selectors:
-                if self.input_text_safe(selector, campaign_name, "xpath"):
-                    self.logger.info(f"✅ Nome da campanha definido: {campaign_name}")
-                    return True
+            if self.smart_wait_and_retry(input_campaign_name, 3, f"Inserir nome: {campaign_name}"):
+                self.logger.info(f"🎉 NOME DA CAMPANHA DEFINIDO: {campaign_name}")
+                return True
             
-            self.logger.warning("⚠️ Não foi possível inserir nome da campanha, mas continuando...")
-            return True  # Não falha, apenas continua
+            self.logger.warning("⚠️ Não conseguiu inserir nome, mas continuando...")
+            return True  # Não é crítico
             
         except Exception as e:
-            self.logger.error(f"Erro no PASSO 5: {str(e)}")
-            return True  # Continua mesmo com erro
+            self.logger.error(f"❌ Erro no PASSO 5: {str(e)}")
+            return True
     
     def step_6_configure_campaign_settings(self, config: Dict) -> bool:
         """PASSO 6: Configurar definições da campanha (redes, localização, idioma, orçamento, lances)"""
@@ -529,21 +591,18 @@ class GoogleAdsAutomation:
                 if self.input_text_safe(selector, language, "xpath"):
                     break
             
-            # 6.4: Configurar orçamento diário - PULA se não preenchido
+            # 6.4: Configurar orçamento diário - MULTILÍNGUE
             budget = config.get('budget', '').strip()
-            if budget:  # Só configura se estiver preenchido
-                budget_selectors = [
-                    "//input[contains(@aria-label, 'orçamento')] | //input[contains(@aria-label, 'budget')]",
-                    "//input[contains(@placeholder, 'orçamento')] | //input[contains(@placeholder, 'budget')]",
-                    "//input[@type='number'][contains(@name, 'budget')]"
-                ]
+            if budget:
+                def input_budget():
+                    return self.try_multilingual_input('budget', budget)
                 
-                for selector in budget_selectors:
-                    if self.input_text_safe(selector, budget, "xpath"):
-                        self.logger.info(f"✅ Orçamento definido: R$ {budget}")
-                        break
+                if self.smart_wait_and_retry(input_budget, 3, f"Inserir orçamento: R$ {budget}"):
+                    self.logger.info(f"💰 ORÇAMENTO DEFINIDO: R$ {budget}")
+                else:
+                    self.logger.warning("⚠️ Não conseguiu inserir orçamento, mas continuando...")
             else:
-                self.logger.info("⚠️ Orçamento não preenchido - PULANDO configuração de orçamento")
+                self.logger.info("⚠️ Orçamento não preenchido - PULANDO")
             
             # 6.5: Configurar estratégia de lances (Maximizar cliques por padrão)
             bidding_selectors = [
@@ -632,21 +691,18 @@ class GoogleAdsAutomation:
         try:
             self.logger.info("📝 PASSO 8: Criando anúncios de pesquisa responsivos...")
             
-            # 8.1: URL final - PULA se não preenchido (conforme instrução)
+            # 8.1: URL final - MULTILÍNGUE
             landing_url = config.get('landing_url', '').strip()
             if landing_url:
-                url_selectors = [
-                    "//input[contains(@aria-label, 'URL')] | //input[contains(@aria-label, 'url')]",
-                    "//input[contains(@placeholder, 'URL')] | //input[contains(@placeholder, 'url')]",
-                    "//input[contains(@name, 'final-url')]"
-                ]
+                def input_url():
+                    return self.try_multilingual_input('url', landing_url)
                 
-                for selector in url_selectors:
-                    if self.input_text_safe(selector, landing_url, "xpath"):
-                        self.logger.info(f"✅ URL final definida: {landing_url}")
-                        break
+                if self.smart_wait_and_retry(input_url, 3, f"Inserir URL: {landing_url}"):
+                    self.logger.info(f"🌐 URL FINAL DEFINIDA: {landing_url}")
+                else:
+                    self.logger.warning("⚠️ Não conseguiu inserir URL, mas continuando...")
             else:
-                self.logger.info("⚠️ URL final não preenchida - PULANDO configuração de URL")
+                self.logger.info("⚠️ URL final não preenchida - PULANDO")
             
             # 8.2: Títulos (até 15, máximo 30 caracteres cada) - PULA se não preenchido
             ad_titles = config.get('ad_titles', [])
@@ -1008,3 +1064,129 @@ class GoogleAdsAutomation:
         except Exception as e:
             self.logger.error(f"Erro ao obter código fonte: {str(e)}")
             return ""
+    
+    def detect_interface_language(self) -> str:
+        """🌐 Detectar automaticamente o idioma da interface do Google Ads"""
+        try:
+            self.logger.info("🔍 Detectando idioma da interface do Google Ads...")
+            
+            # Palavras-chave para detectar idioma
+            detection_words = {
+                'pt': ['Campanhas', 'Nova campanha', 'Orçamento', 'Publicar', 'Continuar'],
+                'en': ['Campaigns', 'New campaign', 'Budget', 'Publish', 'Continue'],
+                'es': ['Campañas', 'Nueva campaña', 'Presupuesto', 'Publicar', 'Continuar']
+            }
+            
+            if not self.driver:
+                return 'pt'  # Padrão português
+            
+            page_text = self.driver.page_source.lower()
+            
+            # Contar ocorrências para cada idioma
+            scores = {}
+            for lang, words in detection_words.items():
+                scores[lang] = sum(1 for word in words if word.lower() in page_text)
+            
+            # Detectar idioma com maior pontuação
+            detected_lang = max(scores, key=scores.get)
+            
+            if scores[detected_lang] > 0:
+                self.current_language = detected_lang
+                self.logger.info(f"🌐 Idioma detectado: {detected_lang.upper()} (Score: {scores[detected_lang]})")
+                return detected_lang
+            else:
+                self.logger.info("⚠️ Não foi possível detectar idioma, usando português como padrão")
+                self.current_language = 'pt'
+                return 'pt'
+                
+        except Exception as e:
+            self.logger.error(f"Erro ao detectar idioma: {str(e)}")
+            self.current_language = 'pt'
+            return 'pt'
+    
+    def try_multilingual_click(self, selector_group: str, selector_key: str = None) -> bool:
+        """🔄 Tentar clique em múltiplos idiomas com várias tentativas"""
+        
+        # Se idioma for auto, detectar primeiro
+        if self.current_language == 'auto':
+            self.detect_interface_language()
+        
+        languages = [self.current_language, 'pt', 'en', 'es']  # Prioridade: detectado, pt, en, es
+        languages = list(dict.fromkeys(languages))  # Remover duplicatas
+        
+        for lang in languages:
+            self.logger.info(f"🔄 Tentando seletores em {lang.upper()}...")
+            
+            # Obter seletores para este idioma
+            if selector_key:
+                selectors = self.multilingual_selectors.get(selector_group, {}).get(selector_key, {}).get(lang, [])
+            else:
+                selectors = self.multilingual_selectors.get(selector_group, {}).get(lang, [])
+            
+            if not selectors:
+                continue
+            
+            # Tentar cada seletor para este idioma
+            for selector in selectors:
+                if self.click_element_safe(selector):
+                    self.logger.info(f"✅ SUCESSO com seletor {lang.upper()}: {selector}")
+                    return True
+        
+        self.logger.error(f"❌ FALHA TOTAL: Nenhum seletor funcionou para {selector_group}")
+        return False
+    
+    def try_multilingual_input(self, selector_group: str, text: str) -> bool:
+        """📝 Tentar inserir texto em campos usando seletores multilíngues"""
+        
+        # Se idioma for auto, detectar primeiro
+        if self.current_language == 'auto':
+            self.detect_interface_language()
+        
+        languages = [self.current_language, 'pt', 'en', 'es']
+        languages = list(dict.fromkeys(languages))
+        
+        for lang in languages:
+            self.logger.info(f"🔄 Tentando campos de input em {lang.upper()}...")
+            
+            selectors = self.multilingual_selectors.get('input_fields', {}).get(selector_group, {}).get(lang, [])
+            
+            if not selectors:
+                continue
+            
+            for selector in selectors:
+                if self.input_text_safe(selector, text, "xpath"):
+                    self.logger.info(f"✅ SUCESSO input {lang.upper()}: {text[:30]}...")
+                    return True
+        
+        self.logger.error(f"❌ FALHA TOTAL: Nenhum campo de input funcionou para {selector_group}")
+        return False
+    
+    def smart_wait_and_retry(self, action_func, max_attempts: int = 5, description: str = "ação") -> bool:
+        """🧠 Sistema inteligente de espera e retry para qualquer ação"""
+        for attempt in range(max_attempts):
+            try:
+                self.logger.info(f"🔄 Tentativa {attempt + 1}/{max_attempts}: {description}")
+                
+                # Aguardar carregamento da página
+                self.wait_for_page_load()
+                
+                # Fechar popups que podem atrapalhar
+                self.close_popups()
+                
+                # Executar ação
+                if action_func():
+                    self.logger.info(f"✅ SUCESSO na tentativa {attempt + 1}: {description}")
+                    return True
+                
+                # Se falhou, aguardar mais um pouco e tentar novamente
+                wait_time = self.retry_delay * (attempt + 1)  # Aumentar tempo progressivamente
+                self.logger.warning(f"⚠️ Tentativa {attempt + 1} falhou, aguardando {wait_time}s...")
+                time.sleep(wait_time)
+                
+            except Exception as e:
+                self.logger.error(f"❌ Erro na tentativa {attempt + 1}: {str(e)}")
+                if attempt < max_attempts - 1:
+                    time.sleep(self.retry_delay * (attempt + 1))
+        
+        self.logger.error(f"💥 FALHA COMPLETA após {max_attempts} tentativas: {description}")
+        return False
