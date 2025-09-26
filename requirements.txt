@@ -5,3 +5,4 @@ undetected-chromedriver==3.5.5
 selenium-stealth==1.0.6
 pandas==1.5.3
 adspower==2.1.0
+webdriver-manager

@@ -151,124 +151,107 @@ class GoogleAdsAutomation:
                 chrome_options.add_argument('--headless')
                 self.logger.info("👻 Modo headless ativado")
             
-            # CONEXÃO EXTREMAMENTE ROBUSTA ao browser AdsPower
-            self.logger.info("🔌 CONFIGURANDO conexão EXTREMAMENTE ROBUSTA ao AdsPower...")
+            # 🔧 CORREÇÃO 1 CORRIGIDA: Sanitizar selenium_address e usar chromedriver do AdsPower
+            self.logger.info("🔌 CONECTANDO ao AdsPower usando dados CORRETOS...")
             
-            # Extrair debug port com múltiplas tentativas
-            debug_port = None
-            debug_fields = ['debug_port', 'debugPort', 'remote_debugging_port', 'port', 'selenium_port']
+            # Extrair e sanitizar selenium address
+            selenium_address = None
             
-            for field in debug_fields:
-                if field in browser_info and browser_info[field]:
-                    debug_port = str(browser_info[field])
-                    self.logger.info(f"✅ Debug port encontrado em '{field}': {debug_port}")
-                    break
-            
-            if not debug_port:
-                self.logger.error("💥 ERRO CRÍTICO: Debug port não encontrado!")
-                self.logger.error(f"📋 Informações disponíveis: {list(browser_info.keys())}")
-                
-                # Tentar portas comuns como fallback
-                common_ports = ["9222", "9223", "9224", "9225"]
-                self.logger.warning("🔄 Tentando portas comuns como fallback...")
-                
-                for port in common_ports:
-                    try:
-                        test_url = f"http://127.0.0.1:{port}/json"
-                        import requests
-                        response = requests.get(test_url, timeout=2)
-                        if response.status_code == 200:
-                            debug_port = port
-                            self.logger.info(f"✅ FALLBACK SUCESSO: Porta {port} respondendo!")
-                            break
-                    except:
-                        continue
-                
-                if not debug_port:
-                    self.logger.error("💥 FALHA TOTAL: Nenhuma porta de debug encontrada ou funcional")
-                    # Último recurso: tentar com porta padrão mesmo assim
-                    debug_port = "9222"
-                    self.logger.warning(f"🚨 ÚLTIMO RECURSO: Usando porta padrão {debug_port}")
-            
-            # Configurar conexão com verificação
-            debugger_address = f"127.0.0.1:{debug_port}"
-            self.logger.info(f"🎯 Configurando debugger address: {debugger_address}")
-            
-            # VERIFICAR se a porta está realmente ativa
-            try:
-                import requests
-                test_url = f"http://127.0.0.1:{debug_port}/json"
-                self.logger.info(f"🧪 TESTANDO conexão: {test_url}")
-                
-                response = requests.get(test_url, timeout=5)
-                if response.status_code == 200:
-                    tabs = response.json()
-                    self.logger.info(f"✅ DEBUG PORT ATIVO: {len(tabs)} aba(s) detectada(s)")
-                    for i, tab in enumerate(tabs[:3]):  # Mostrar apenas 3 primeiras
-                        self.logger.info(f"   📄 Aba {i+1}: {tab.get('title', 'Sem título')[:50]}")
-                else:
-                    self.logger.warning(f"⚠️ DEBUG PORT responde com status {response.status_code} - tentando conectar mesmo assim")
-                    # Não retornar False aqui - tentar conectar mesmo assim
+            # Método 1: ws.selenium (sanitizar se necessário)
+            if 'ws' in browser_info and isinstance(browser_info['ws'], dict):
+                raw_selenium = browser_info['ws'].get('selenium', '')
+                if raw_selenium:
+                    # Sanitizar: extrair apenas host:port, remover ws:// se houver
+                    if raw_selenium.startswith('ws://'):
+                        # Extrair host:port do WebSocket URL
+                        import re
+                        match = re.search(r'ws://([^/]+)', raw_selenium)
+                        if match:
+                            selenium_address = match.group(1)
+                    else:
+                        # Já é host:port limpo
+                        selenium_address = raw_selenium
                     
-            except Exception as test_error:
-                self.logger.error(f"💥 ERRO ao testar debug port: {str(test_error)}")
+                    self.logger.info(f"✅ SELENIUM ADDRESS sanitizado: {selenium_address}")
+            
+            # Fallback: usar debug_port
+            if not selenium_address and 'debug_port' in browser_info:
+                debug_port = browser_info['debug_port']
+                selenium_address = f"127.0.0.1:{debug_port}"
+                self.logger.info(f"🔄 FALLBACK: Usando debug_port: {selenium_address}")
+            
+            if not selenium_address:
+                self.logger.error("💥 ERRO: Nem selenium address nem debug_port encontrados!")
                 return False
             
-            # Configurar Chrome Options com debug port confirmado
-            chrome_options.add_experimental_option("debuggerAddress", debugger_address)
+            chrome_options.add_experimental_option("debuggerAddress", selenium_address)
             
-            # MÉTODO PRINCIPAL: Conectar via debugger address
-            self.logger.info("🚀 MÉTODO PRINCIPAL: Criando WebDriver com debugger address...")
+            # 🔧 CORREÇÃO 2 CORRIGIDA: Usar ChromeDriver do AdsPower primeiro
+            self.logger.info("🚀 Criando WebDriver com ChromeDriver CORRETO...")
             
-            connection_successful = False
+            driver_created = False
             
-            try:
-                from selenium import webdriver
-                self.driver = webdriver.Chrome(options=chrome_options)
-                
-                if self.driver:
-                    self.logger.info("✅ WebDriver criado com SUCESSO!")
-                    connection_successful = True
-                else:
-                    self.logger.error("❌ WebDriver retornou None")
-                    
-            except Exception as main_connection_error:
-                self.logger.error(f"💥 FALHA no método principal: {str(main_connection_error)}")
-                self.logger.info("🔄 Tentando método alternativo...")
-                
-                # MÉTODO ALTERNATIVO: Tentar sem remote debugging
+            # PRIMEIRA TENTATIVA: ChromeDriver fornecido pelo AdsPower
+            if 'webdriver' in browser_info:
                 try:
-                    from selenium import webdriver as alt_webdriver
-                    alternative_options = Options()
+                    adspower_driver_path = browser_info['webdriver']
+                    self.logger.info(f"📍 Tentativa 1: ChromeDriver do AdsPower: {adspower_driver_path}")
                     
-                    # Opções básicas apenas
-                    alternative_options.add_argument('--no-sandbox')
-                    alternative_options.add_argument('--disable-dev-shm-usage')
-                    alternative_options.add_argument('--disable-blink-features=AutomationControlled')
-                    
-                    # Tentar conectar ao browser existente via processo
-                    # (método mais básico que pode funcionar)
-                    self.logger.info("🔄 MÉTODO ALTERNATIVO: Conectando via processo básico...")
-                    
-                    # Aguardar um pouco e tentar novamente
-                    time.sleep(3)
-                    alternative_options.add_experimental_option("debuggerAddress", debugger_address)
-                    
-                    self.driver = alt_webdriver.Chrome(options=alternative_options)
+                    # Verificar se arquivo existe
+                    import os
+                    if os.path.exists(adspower_driver_path):
+                        from selenium import webdriver
+                        from selenium.webdriver.chrome.service import Service
+                        
+                        service = Service(adspower_driver_path)
+                        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                        
+                        if self.driver:
+                            self.logger.info("✅ SUCESSO: ChromeDriver do AdsPower funcionou!")
+                            driver_created = True
+                    else:
+                        self.logger.warning(f"⚠️ ChromeDriver do AdsPower não existe: {adspower_driver_path}")
+                        
+                except Exception as adspower_error:
+                    self.logger.warning(f"⚠️ ChromeDriver do AdsPower falhou: {str(adspower_error)}")
+            
+            # SEGUNDA TENTATIVA: ChromeDriver do PATH (se AdsPower falhou)
+            if not driver_created:
+                try:
+                    from selenium import webdriver
+                    self.logger.info("📍 Tentativa 2: ChromeDriver do PATH...")
+                    self.driver = webdriver.Chrome(options=chrome_options)
                     
                     if self.driver:
-                        self.logger.info("✅ MÉTODO ALTERNATIVO SUCESSO!")
-                        connection_successful = True
-                    
-                except Exception as alternative_error:
-                    self.logger.error(f"💥 MÉTODO ALTERNATIVO também falhou: {str(alternative_error)}")
+                        self.logger.info("✅ SUCESSO: ChromeDriver do PATH funcionou!")
+                        driver_created = True
+                        
+                except Exception as path_error:
+                    self.logger.warning(f"⚠️ ChromeDriver do PATH falhou: {str(path_error)}")
             
-            if not connection_successful or not self.driver:
-                self.logger.error("💥 FALHA TOTAL: Todos os métodos de conexão falharam!")
-                self.logger.error("🔧 POSSÍVEIS SOLUÇÕES:")
-                self.logger.error("   1. Verifique se AdsPower permite automação")
-                self.logger.error("   2. Verifique se remote debugging está habilitado")
-                self.logger.error("   3. Tente reiniciar o AdsPower")
+            # TERCEIRA TENTATIVA: Instalar automaticamente (último recurso)
+            if not driver_created:
+                try:
+                    self.logger.info("📍 Tentativa 3: ÚLTIMO RECURSO - Instalando ChromeDriver...")
+                    from selenium import webdriver
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    from selenium.webdriver.chrome.service import Service
+                    
+                    self.logger.warning("⚠️ ATENÇÃO: Pode haver incompatibilidade de versão!")
+                    driver_path = ChromeDriverManager().install()
+                    service = Service(driver_path)
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    
+                    if self.driver:
+                        self.logger.info("✅ ÚLTIMO RECURSO funcionou (pode ser instável)")
+                        driver_created = True
+                        
+                except Exception as install_error:
+                    self.logger.error(f"💥 ÚLTIMO RECURSO falhou: {str(install_error)}")
+            
+            if not driver_created or not self.driver:
+                self.logger.error("💥 FALHA TOTAL: Todas as tentativas de ChromeDriver falharam!")
+                self.logger.error("🔧 PROBLEMA: Incompatibilidade de versão ou driver não disponível")
                 return False
             
             # Configurar WebDriverWait (só se driver existe)
@@ -553,96 +536,63 @@ class GoogleAdsAutomation:
             return False
     
     def navigate_to_google_ads(self) -> bool:
-        """🌐 Navegar para Google Ads usando o sistema EXTREMAMENTE CALCULADO"""
+        """🌐 CORREÇÃO 3: Navegação SIMPLIFICADA e DIRETA"""
         try:
-            self.logger.info("🌐 INICIANDO navegação para Google Ads com sistema CALCULADO...")
+            self.logger.info("🌐 INICIANDO navegação SIMPLIFICADA para Google Ads...")
             
             if not self.driver:
                 self.logger.error("❌ Driver não está inicializado!")
                 return False
             
-            # PRIMEIRO: Preparar browser para navegação eficaz
-            self.logger.info("🛠️ Preparando browser para controle total...")
-            if not self.prepare_browser_for_navigation():
-                self.logger.error("❌ FALHA na preparação do browser")
-                return False
-            
-            # SEGUNDO: Usar navegação extremamente calculada
+            # Lista simples de URLs para tentar
             target_urls = [
                 "https://ads.google.com/aw/",
-                "https://ads.google.com/home/", 
+                "https://ads.google.com/home/",
                 "https://ads.google.com/",
-                "https://ads.google.com/aw/campaigns/",
-                "https://ads.google.com/aw/overview/"
+                "https://ads.google.com/aw/campaigns/"
             ]
             
-            for attempt, target_url in enumerate(target_urls, 1):
-                self.logger.info(f"🎯 TENTATIVA {attempt}: Navegação CALCULADA para {target_url}")
-                
-                # Usar o método extremamente calculado
-                if self.navigate_with_extreme_calculation(target_url):
-                    self.logger.info(f"✅ SUCESSO na tentativa {attempt}!")
+            for i, url in enumerate(target_urls, 1):
+                try:
+                    self.logger.info(f"🎯 TENTATIVA {i}: Navegando para {url}")
                     
-                    # Verificar qualidade da navegação com análise detalhada
-                    try:
-                        time.sleep(3)  # Aguardar estabilização
-                        
-                        final_url = self.driver.current_url
-                        title = self.driver.title or ""
+                    # Navegação direta com driver.get()
+                    self.driver.get(url)
+                    
+                    # Aguardar carregamento
+                    time.sleep(4)
+                    
+                    # Verificação clara de sucesso
+                    current_url = self.driver.current_url
+                    title = self.driver.title or ""
+                    
+                    self.logger.info(f"📍 URL atual: {current_url}")
+                    self.logger.info(f"📄 Título: {title}")
+                    
+                    # Verificação simples se chegou ao Google Ads
+                    if "ads.google.com" in current_url.lower():
+                        # Verificar se não é página de login
                         page_source = self.driver.page_source.lower()
-                        
-                        self.logger.info(f"🎯 URL final: {final_url}")
-                        self.logger.info(f"📄 Título: {title}")
-                        
-                        # Análise detalhada dos indicadores de sucesso
-                        success_indicators = [
-                            ("campanhas" in page_source, "palavra 'campanhas' encontrada"),
-                            ("campaigns" in page_source, "palavra 'campaigns' encontrada"), 
-                            ("google ads" in title.lower(), "título contém 'Google Ads'"),
-                            ("ads.google.com" in final_url.lower(), "URL contém 'ads.google.com'"),
-                            ("overview" in final_url.lower(), "URL contém 'overview'"),
-                            ("campaign" in page_source, "palavra 'campaign' encontrada")
-                        ]
-                        
-                        success_count = 0
-                        for indicator_found, description in success_indicators:
-                            if indicator_found:
-                                self.logger.info(f"✅ INDICADOR: {description}")
-                                success_count += 1
-                        
-                        # Verificar status de login
-                        login_indicators = ["entrar", "sign in", "login"]
-                        login_detected = any(indicator in page_source for indicator in login_indicators)
-                        
-                        if login_detected:
-                            self.logger.warning(f"⚠️ Página de login detectada - tentando próxima URL...")
-                            continue
-                        elif success_count >= 2:
-                            self.logger.info(f"🎉 NAVEGAÇÃO CALCULADA CONCLUÍDA COM SUCESSO! {success_count} indicadores")
-                            
-                            # Screenshot final de sucesso
-                            self.take_screenshot("navegacao_calculada_sucesso.png")
+                        if not any(login_term in page_source for login_term in ["sign in", "entrar", "login"]):
+                            self.logger.info(f"✅ SUCESSO: Chegou ao Google Ads na tentativa {i}")
+                            self.take_screenshot("google_ads_sucesso.png")
                             return True
                         else:
-                            self.logger.warning(f"⚠️ Apenas {success_count} indicadores - tentando próxima URL...")
-                            continue
-                            
-                    except Exception as analysis_error:
-                        self.logger.error(f"❌ Erro na análise pós-navegação: {str(analysis_error)}")
-                        continue
-                
-                else:
-                    self.logger.warning(f"⚠️ Tentativa {attempt} falhou - tentando próxima...")
-                    time.sleep(2)  # Pausa entre tentativas
+                            self.logger.warning(f"⚠️ Página de login detectada - tentativa {i}")
+                    else:
+                        self.logger.warning(f"⚠️ URL incorreta na tentativa {i}: {current_url}")
+                        
+                except Exception as nav_error:
+                    self.logger.error(f"❌ Erro na tentativa {i}: {str(nav_error)}")
+                    continue
             
             # Se chegou aqui, todas as tentativas falharam
-            self.logger.error("💥 FALHA TOTAL: Todas as tentativas de navegação calculada falharam")
-            self.take_screenshot("navegacao_calculada_falha_total.png")
+            self.logger.error("💥 FALHA: Todas as tentativas de navegação falharam")
+            self.take_screenshot("navegacao_falha_total.png")
             return False
             
         except Exception as e:
-            self.logger.error(f"💥 ERRO CRÍTICO na navegação calculada: {str(e)}")
-            self.take_screenshot("navegacao_calculada_erro_critico.png")
+            self.logger.error(f"💥 ERRO CRÍTICO na navegação: {str(e)}")
             return False
     
     def close_popups(self):
@@ -1559,12 +1509,15 @@ class GoogleAdsAutomation:
             return False
             
         finally:
-            # Sempre limpar recursos
+            # 🔧 CORREÇÃO 4: Não fechar browser, apenas desconectar driver
             try:
-                self.logger.info("🧹 Limpando recursos do driver...")
-                self.cleanup()
-            except Exception as cleanup_error:
-                self.logger.warning(f"⚠️ Erro ao limpar recursos: {str(cleanup_error)}")
+                if self.driver:
+                    self.logger.info("🔌 Desconectando driver (mantendo browser aberto)...")
+                    self.driver.quit()
+                    self.driver = None
+                    self.logger.info("✅ Driver desconectado com sucesso")
+            except Exception as disconnect_error:
+                self.logger.warning(f"⚠️ Erro ao desconectar driver: {str(disconnect_error)}")
     
     def create_campaign(self, profile: Dict, config: Dict) -> bool:
         """Método legado - mantido para compatibilidade"""
