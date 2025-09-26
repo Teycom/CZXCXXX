@@ -25,9 +25,23 @@ from config import Config
 class GoogleAdsCampaignBot:
     def __init__(self, root):
         self.root = root
-        self.root.title("Google Ads Campaign Bot - AdsPower Integration")
-        self.root.geometry("1200x800")
-        self.root.configure(bg='#f0f0f0')
+        self.root.title("🚀 Google Ads Campaign Bot - AdsPower Integration")
+        self.root.geometry("1400x900")
+        self.root.configure(bg='#1a1a2e')
+        self.root.state('zoomed')  # Maximizar janela no Windows
+        
+        # Cores modernas
+        self.colors = {
+            'primary': '#16213e',
+            'secondary': '#0f3460', 
+            'accent': '#53a8b6',
+            'success': '#5cb85c',
+            'warning': '#f0ad4e',
+            'danger': '#d9534f',
+            'light': '#ffffff',
+            'dark': '#1a1a2e',
+            'muted': '#6c757d'
+        }
         
         # Inicializar componentes
         self.config = Config()
@@ -40,6 +54,7 @@ class GoogleAdsCampaignBot:
         self.selected_profiles = []
         self.campaign_config = {}
         self.is_running = False
+        self.config_file = 'selected_profiles.json'  # Arquivo para persistir seleções
         
         self.setup_ui()
         self.refresh_profiles()
@@ -47,19 +62,49 @@ class GoogleAdsCampaignBot:
     def setup_ui(self):
         """Configurar a interface do usuário"""
         
-        # Título principal
-        title_frame = tk.Frame(self.root, bg='#2c3e50', height=60)
+        # Header moderno com gradiente visual
+        title_frame = tk.Frame(self.root, bg=self.colors['primary'], height=80)
         title_frame.pack(fill='x', padx=0, pady=0)
         title_frame.pack_propagate(False)
         
-        title_label = tk.Label(title_frame, text="🚀 Google Ads Campaign Bot", 
-                              font=('Arial', 18, 'bold'), 
-                              fg='white', bg='#2c3e50')
-        title_label.pack(pady=15)
+        # Logo e título
+        title_container = tk.Frame(title_frame, bg=self.colors['primary'])
+        title_container.pack(expand=True, fill='both')
+        
+        title_label = tk.Label(title_container, text="🚀 Google Ads Campaign Bot", 
+                              font=('Segoe UI', 24, 'bold'), 
+                              fg=self.colors['light'], bg=self.colors['primary'])
+        title_label.pack(side='left', padx=20, pady=20)
+        
+        subtitle_label = tk.Label(title_container, text="Automação Profissional com AdsPower", 
+                                 font=('Segoe UI', 12), 
+                                 fg=self.colors['accent'], bg=self.colors['primary'])
+        subtitle_label.pack(side='left', padx=(0, 20), pady=20)
+        
+        # Status de conexão
+        self.connection_status = tk.Label(title_container, text="🔄 Verificando conexão...", 
+                                         font=('Segoe UI', 10), 
+                                         fg=self.colors['warning'], bg=self.colors['primary'])
+        self.connection_status.pack(side='right', padx=20, pady=20)
+        
+        # Configurar estilo moderno das abas
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        style.configure('Modern.TNotebook', background=self.colors['dark'], borderwidth=0)
+        style.configure('Modern.TNotebook.Tab', 
+                       background=self.colors['secondary'], 
+                       foreground=self.colors['light'],
+                       padding=[20, 10],
+                       font=('Segoe UI', 11, 'bold'))
+        style.map('Modern.TNotebook.Tab',
+                 background=[('selected', self.colors['accent']),
+                           ('active', self.colors['primary'])],
+                 foreground=[('selected', self.colors['light'])])
         
         # Frame principal com abas
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        notebook = ttk.Notebook(self.root, style='Modern.TNotebook')
+        notebook.pack(fill='both', expand=True, padx=15, pady=15)
         
         # Aba 1: Configuração de Perfis
         self.setup_profiles_tab(notebook)
@@ -74,59 +119,119 @@ class GoogleAdsCampaignBot:
         self.setup_settings_tab(notebook)
     
     def setup_profiles_tab(self, notebook):
-        """Configurar aba de perfis do AdsPower - com checkboxes e suporte a 2000+ perfis"""
+        """Configurar aba de perfis do AdsPower - MODERNA E RESPONSIVA"""
         profiles_frame = ttk.Frame(notebook)
         notebook.add(profiles_frame, text="👥 Perfis AdsPower")
         
-        # Header estilizado
-        header_frame = tk.Frame(profiles_frame, bg='#2c3e50', height=60)
+        # Container principal moderno
+        main_container = tk.Frame(profiles_frame, bg=self.colors['dark'])
+        main_container.pack(fill='both', expand=True, padx=0, pady=0)
+        
+        # Header moderno com ações
+        header_frame = tk.Frame(main_container, bg=self.colors['primary'], height=80)
         header_frame.pack(fill='x', padx=0, pady=0)
         header_frame.pack_propagate(False)
         
-        header_label = tk.Label(header_frame, text="👥 Seleção de Perfis do AdsPower", 
-                               font=('Arial', 14, 'bold'), fg='white', bg='#2c3e50')
-        header_label.pack(side='left', padx=20, pady=15)
+        # Título e informações
+        info_container = tk.Frame(header_frame, bg=self.colors['primary'])
+        info_container.pack(side='left', fill='y', padx=20, pady=15)
         
-        refresh_btn = tk.Button(header_frame, text="🔄 Atualizar Perfis", 
+        header_label = tk.Label(info_container, text="👥 Gerenciamento de Perfis", 
+                               font=('Segoe UI', 16, 'bold'), fg=self.colors['light'], bg=self.colors['primary'])
+        header_label.pack(anchor='w')
+        
+        self.profiles_info_label = tk.Label(info_container, text="Carregando perfis...", 
+                                           font=('Segoe UI', 10), fg=self.colors['accent'], bg=self.colors['primary'])
+        self.profiles_info_label.pack(anchor='w')
+        
+        # Botões de ação modernos
+        action_container = tk.Frame(header_frame, bg=self.colors['primary'])
+        action_container.pack(side='right', padx=20, pady=15)
+        
+        # Botão Atualizar
+        refresh_btn = tk.Button(action_container, text="🔄 Atualizar", 
                                command=self.refresh_profiles,
-                               bg='#3498db', fg='white', font=('Arial', 10, 'bold'),
-                               relief='flat', padx=20, pady=5)
-        refresh_btn.pack(side='right', padx=20, pady=15)
+                               bg=self.colors['accent'], fg=self.colors['light'], 
+                               font=('Segoe UI', 10, 'bold'),
+                               relief='flat', padx=20, pady=8, cursor='hand2',
+                               borderwidth=0)
+        refresh_btn.pack(side='right', padx=5)
         
-        # Frame de busca
-        search_frame = tk.Frame(profiles_frame, bg='#ecf0f1', height=50)
-        search_frame.pack(fill='x', padx=10, pady=5)
+        # Botão Salvar Seleção
+        save_btn = tk.Button(action_container, text="💾 Salvar Seleção", 
+                            command=self.save_profile_selection,
+                            bg=self.colors['success'], fg=self.colors['light'], 
+                            font=('Segoe UI', 10, 'bold'),
+                            relief='flat', padx=20, pady=8, cursor='hand2',
+                            borderwidth=0)
+        save_btn.pack(side='right', padx=5)
+        
+        # Botão Carregar Seleção
+        load_btn = tk.Button(action_container, text="📁 Carregar", 
+                            command=self.load_profile_selection,
+                            bg=self.colors['warning'], fg=self.colors['light'], 
+                            font=('Segoe UI', 10, 'bold'),
+                            relief='flat', padx=20, pady=8, cursor='hand2',
+                            borderwidth=0)
+        load_btn.pack(side='right', padx=5)
+        
+        # Barra de busca moderna
+        search_frame = tk.Frame(main_container, bg=self.colors['secondary'], height=60)
+        search_frame.pack(fill='x', padx=0, pady=0)
         search_frame.pack_propagate(False)
         
-        tk.Label(search_frame, text="🔍 Buscar:", font=('Arial', 10), bg='#ecf0f1').pack(side='left', padx=10, pady=10)
-        self.search_entry = tk.Entry(search_frame, font=('Arial', 10), width=30)
-        self.search_entry.pack(side='left', padx=5, pady=10)
+        search_container = tk.Frame(search_frame, bg=self.colors['secondary'])
+        search_container.pack(expand=True, fill='both', padx=20, pady=15)
+        
+        # Ícone de busca
+        search_icon = tk.Label(search_container, text="🔍", font=('Segoe UI', 14), 
+                              fg=self.colors['accent'], bg=self.colors['secondary'])
+        search_icon.pack(side='left', padx=(0, 10))
+        
+        # Campo de busca estilizado
+        self.search_entry = tk.Entry(search_container, font=('Segoe UI', 12), width=40,
+                                    bg=self.colors['light'], fg=self.colors['dark'],
+                                    relief='flat', bd=8)
+        self.search_entry.pack(side='left', padx=5, ipady=5)
         self.search_entry.bind('<KeyRelease>', self.filter_profiles)
+        self.search_entry.insert(0, "Digite para buscar perfis...")
+        self.search_entry.bind('<FocusIn>', self.clear_search_placeholder)
+        self.search_entry.bind('<FocusOut>', self.restore_search_placeholder)
         
-        # Botões de seleção em massa
-        buttons_frame = tk.Frame(search_frame, bg='#ecf0f1')
-        buttons_frame.pack(side='right', padx=10, pady=5)
+        # Botões de seleção em massa modernos
+        buttons_container = tk.Frame(search_container, bg=self.colors['secondary'])
+        buttons_container.pack(side='right', padx=10)
         
-        select_all_btn = tk.Button(buttons_frame, text="Selecionar Todos", 
+        select_all_btn = tk.Button(buttons_container, text="✅ Todos", 
                                   command=self.select_all_profiles,
-                                  bg='#27ae60', fg='white', font=('Arial', 9),
-                                  relief='flat', padx=10)
-        select_all_btn.pack(side='left', padx=2)
+                                  bg=self.colors['success'], fg=self.colors['light'], 
+                                  font=('Segoe UI', 10, 'bold'),
+                                  relief='flat', padx=15, pady=6, cursor='hand2',
+                                  borderwidth=0)
+        select_all_btn.pack(side='left', padx=3)
         
-        deselect_all_btn = tk.Button(buttons_frame, text="Limpar Tudo", 
+        deselect_all_btn = tk.Button(buttons_container, text="❌ Limpar", 
                                     command=self.deselect_all_profiles,
-                                    bg='#e74c3c', fg='white', font=('Arial', 9),
-                                    relief='flat', padx=10)
-        deselect_all_btn.pack(side='left', padx=2)
+                                    bg=self.colors['danger'], fg=self.colors['light'], 
+                                    font=('Segoe UI', 10, 'bold'),
+                                    relief='flat', padx=15, pady=6, cursor='hand2',
+                                    borderwidth=0)
+        deselect_all_btn.pack(side='left', padx=3)
+        
+        # Container de perfis com design moderno
+        profiles_container = tk.Frame(main_container, bg=self.colors['light'])
+        profiles_container.pack(fill='both', expand=True, padx=15, pady=15)
         
         # Frame principal com scrollbar para checkboxes
-        main_frame = tk.Frame(profiles_frame)
-        main_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        main_frame = tk.Frame(profiles_container, bg=self.colors['light'])
+        main_frame.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Canvas e scrollbar para muitos perfis
-        self.profiles_canvas = tk.Canvas(main_frame, bg='white')
-        scrollbar = tk.Scrollbar(main_frame, orient='vertical', command=self.profiles_canvas.yview)
-        self.profiles_scrollable_frame = tk.Frame(self.profiles_canvas, bg='white')
+        # Canvas e scrollbar modernos para muitos perfis
+        self.profiles_canvas = tk.Canvas(main_frame, bg=self.colors['light'], highlightthickness=0, bd=0)
+        scrollbar = tk.Scrollbar(main_frame, orient='vertical', command=self.profiles_canvas.yview,
+                                bg=self.colors['secondary'], troughcolor=self.colors['light'],
+                                activebackground=self.colors['accent'])
+        self.profiles_scrollable_frame = tk.Frame(self.profiles_canvas, bg=self.colors['light'])
         
         self.profiles_scrollable_frame.bind(
             "<Configure>",
@@ -143,14 +248,98 @@ class GoogleAdsCampaignBot:
         self.profile_vars = {}
         self.profile_checkboxes = {}
         
-        # Status no rodapé
-        status_frame = tk.Frame(profiles_frame, bg='#34495e', height=40)
+        # Status no rodapé moderno
+        status_frame = tk.Frame(main_container, bg=self.colors['primary'], height=50)
         status_frame.pack(fill='x', padx=0, pady=0)
         status_frame.pack_propagate(False)
         
-        self.profiles_status_label = tk.Label(status_frame, text="Aguardando carregamento de perfis...", 
-                                             font=('Arial', 10), fg='white', bg='#34495e')
-        self.profiles_status_label.pack(pady=10)
+        status_container = tk.Frame(status_frame, bg=self.colors['primary'])
+        status_container.pack(expand=True, fill='both', padx=20, pady=12)
+        
+        self.profiles_status_label = tk.Label(status_container, text="🔄 Aguardando carregamento de perfis...", 
+                                             font=('Segoe UI', 11, 'bold'), fg=self.colors['accent'], bg=self.colors['primary'])
+        self.profiles_status_label.pack(side='left')
+        
+        # Contador de selecionados no canto direito
+        self.selected_count_label = tk.Label(status_container, text="0 selecionados", 
+                                           font=('Segoe UI', 11, 'bold'), fg=self.colors['success'], bg=self.colors['primary'])
+        self.selected_count_label.pack(side='right')
+    
+    def save_profile_selection(self):
+        """💾 Salvar seleção atual de perfis"""
+        try:
+            self.update_selected_profiles()
+            selected_ids = [profile['user_id'] for profile in self.selected_profiles]
+            
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(selected_ids, f, indent=2)
+            
+            messagebox.showinfo("✅ Sucesso", f"Seleção de {len(selected_ids)} perfis salva com sucesso!")
+            self.logger.info(f"Seleção de {len(selected_ids)} perfis salva em {self.config_file}")
+            
+        except Exception as e:
+            messagebox.showerror("❌ Erro", f"Erro ao salvar seleção: {str(e)}")
+            self.logger.error(f"Erro ao salvar seleção: {str(e)}")
+    
+    def load_profile_selection(self):
+        """📁 Carregar seleção salva de perfis"""
+        try:
+            if not os.path.exists(self.config_file):
+                messagebox.showinfo("ℹ️ Informação", "Nenhuma seleção salva encontrada.")
+                return
+            
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                selected_ids = json.load(f)
+            
+            # Desmarcar todos primeiro
+            self.deselect_all_profiles()
+            
+            # Marcar os salvos
+            loaded_count = 0
+            for user_id in selected_ids:
+                if user_id in self.profile_vars:
+                    self.profile_vars[user_id].set(True)
+                    loaded_count += 1
+            
+            self.update_selected_count()
+            messagebox.showinfo("✅ Sucesso", f"Seleção de {loaded_count} perfis carregada com sucesso!")
+            self.logger.info(f"Seleção de {loaded_count} perfis carregada de {self.config_file}")
+            
+        except Exception as e:
+            messagebox.showerror("❌ Erro", f"Erro ao carregar seleção: {str(e)}")
+            self.logger.error(f"Erro ao carregar seleção: {str(e)}")
+    
+    def load_profile_selection_auto(self):
+        """🔄 Carregar seleção automaticamente (silencioso)"""
+        try:
+            if not os.path.exists(self.config_file):
+                return
+            
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                selected_ids = json.load(f)
+            
+            # Marcar os salvos
+            for user_id in selected_ids:
+                if user_id in self.profile_vars:
+                    self.profile_vars[user_id].set(True)
+            
+            self.update_selected_count()
+            self.logger.info(f"Seleção automática carregada: {len(selected_ids)} perfis")
+            
+        except Exception as e:
+            self.logger.warning(f"Não foi possível carregar seleção automática: {str(e)}")
+    
+    def clear_search_placeholder(self, event):
+        """Limpar placeholder do campo de busca"""
+        if self.search_entry.get() == "Digite para buscar perfis...":
+            self.search_entry.delete(0, tk.END)
+            self.search_entry.config(fg=self.colors['dark'])
+    
+    def restore_search_placeholder(self, event):
+        """Restaurar placeholder se campo estiver vazio"""
+        if not self.search_entry.get().strip():
+            self.search_entry.insert(0, "Digite para buscar perfis...")
+            self.search_entry.config(fg=self.colors['muted'])
     
     def setup_campaign_tab(self, notebook):
         """Configurar aba de configuração de campanhas"""
@@ -388,28 +577,54 @@ class GoogleAdsCampaignBot:
                 var = tk.BooleanVar()
                 self.profile_vars[profile['user_id']] = var
                 
-                # Criar frame para cada perfil
-                profile_frame = tk.Frame(self.profiles_scrollable_frame, bg='white', relief='solid', bd=1)
-                profile_frame.pack(fill='x', padx=5, pady=2)
+                # Criar frame moderno para cada perfil
+                profile_frame = tk.Frame(self.profiles_scrollable_frame, bg=self.colors['light'], 
+                                       relief='solid', bd=1, highlightbackground=self.colors['accent'])
+                profile_frame.pack(fill='x', padx=8, pady=3)
                 
-                # Checkbox
+                # Hover effect
+                def on_enter(event, frame=profile_frame):
+                    frame.config(bg=self.colors['accent'], relief='raised')
+                def on_leave(event, frame=profile_frame):
+                    frame.config(bg=self.colors['light'], relief='solid')
+                
+                profile_frame.bind('<Enter>', on_enter)
+                profile_frame.bind('<Leave>', on_leave)
+                
+                # Checkbox moderno
                 checkbox = tk.Checkbutton(profile_frame, 
-                                        text=f"{profile['name']} (ID: {profile['user_id']})",
+                                        text=f"👤 {profile['name']} (ID: {profile['user_id']})",
                                         variable=var,
-                                        bg='white',
-                                        font=('Arial', 10),
+                                        bg=self.colors['light'],
+                                        fg=self.colors['dark'],
+                                        font=('Segoe UI', 11),
                                         anchor='w',
-                                        command=self.update_selected_count)
-                checkbox.pack(fill='x', padx=10, pady=5)
+                                        activebackground=self.colors['accent'],
+                                        activeforeground=self.colors['light'],
+                                        selectcolor=self.colors['success'],
+                                        command=self.update_selected_count,
+                                        cursor='hand2')
+                checkbox.pack(fill='x', padx=15, pady=8)
+                
+                # Bind hover para checkbox também
+                checkbox.bind('<Enter>', on_enter)
+                checkbox.bind('<Leave>', on_leave)
                 
                 self.profile_checkboxes[profile['user_id']] = checkbox
             
-            # Atualizar status
+            # Atualizar status e informações
             self.profiles_status_label.config(text=f"✅ {len(profiles)} perfis carregados do AdsPower")
+            self.profiles_info_label.config(text=f"{len(profiles)} perfis disponíveis")
+            self.connection_status.config(text="✅ Conectado ao AdsPower", fg=self.colors['success'])
             self.logger.info(f"Carregados {len(profiles)} perfis do AdsPower")
+            
+            # Carregar seleção salva automaticamente
+            self.load_profile_selection_auto()
             
         except Exception as e:
             self.profiles_status_label.config(text="❌ Erro ao carregar perfis")
+            self.profiles_info_label.config(text="Erro na conexão")
+            self.connection_status.config(text="❌ Desconectado", fg=self.colors['danger'])
             messagebox.showerror("Erro", f"Erro ao carregar perfis: {str(e)}")
             self.logger.error(f"Erro ao carregar perfis: {str(e)}")
     
@@ -428,10 +643,13 @@ class GoogleAdsCampaignBot:
         self.update_selected_profiles()
         count = len(self.selected_profiles)
         
+        # Atualizar contador no canto direito
         if count > 0:
-            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados | 🎯 {count} selecionados")
+            self.selected_count_label.config(text=f"🎯 {count} selecionados", fg=self.colors['success'])
+            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
         else:
-            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados | ⚠️ Nenhum selecionado")
+            self.selected_count_label.config(text="Nenhum selecionado", fg=self.colors['warning'])
+            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
     
     def filter_profiles(self, event=None):
         """Filtrar perfis com base na busca"""
@@ -563,8 +781,11 @@ class GoogleAdsCampaignBot:
     
     def start_automation(self):
         """Iniciar automação"""
+        # CORREÇÃO DO BUG: Atualizar perfis selecionados antes da verificação
+        self.update_selected_profiles()
+        
         if not self.selected_profiles:
-            messagebox.showwarning("Aviso", "Selecione pelo menos um perfil do AdsPower!")
+            messagebox.showwarning("⚠️ Aviso", "Selecione pelo menos um perfil do AdsPower!")
             return
         
         config = self.get_campaign_config()
