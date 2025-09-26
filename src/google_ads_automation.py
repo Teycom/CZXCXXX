@@ -124,183 +124,358 @@ class GoogleAdsAutomation:
         }
     
     def setup_driver(self, browser_info: Dict, headless: bool = False) -> bool:
-        """Configurar driver do Selenium com informações do browser AdsPower"""
+        """🔧 Configurar driver SUPER ROBUSTO para controlar browser AdsPower com TOTAL EFICÁCIA"""
         try:
+            self.logger.info("🔧 INICIANDO setup do driver com controle EXTREMAMENTE CALCULADO...")
+            
             if not browser_info:
-                self.logger.error("Informações do browser não fornecidas")
+                self.logger.error("❌ Informações do browser não fornecidas")
                 return False
+            
+            # Log das informações do browser para debugging
+            self.logger.info(f"📋 Informações do browser recebidas: {browser_info}")
             
             chrome_options = Options()
             
-            # Configurações anti-detecção
+            # Configurações anti-detecção PREMIUM
+            self.logger.info("🛡️ Configurando opções anti-detecção...")
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--disable-extensions-file-access-check')
+            chrome_options.add_argument('--disable-extensions-http-throttling')
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
             if headless:
                 chrome_options.add_argument('--headless')
+                self.logger.info("👻 Modo headless ativado")
             
             # Conectar ao browser AdsPower existente via debug port
             debug_port = browser_info.get('debug_port')
             if not debug_port:
-                self.logger.error("Porta de debug não encontrada nas informações do browser")
+                self.logger.error("❌ Porta de debug não encontrada nas informações do browser")
                 return False
             
+            self.logger.info(f"🔌 Conectando ao browser na porta de debug: {debug_port}")
+            
             # Conectar ao browser existente via debugger address
-            chrome_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
+            debugger_address = f"127.0.0.1:{debug_port}"
+            chrome_options.add_experimental_option("debuggerAddress", debugger_address)
+            self.logger.info(f"🎯 Debugger address configurado: {debugger_address}")
             
             # Usar webdriver regular para conectar ao browser existente
+            self.logger.info("🚀 Criando instância do WebDriver...")
             from selenium import webdriver
             self.driver = webdriver.Chrome(options=chrome_options)
             
+            if not self.driver:
+                self.logger.error("❌ Falha ao criar driver WebDriver")
+                return False
+            
             # Configurar WebDriverWait
-            if self.driver:
-                self.wait = WebDriverWait(self.driver, self.default_timeout)
+            self.wait = WebDriverWait(self.driver, self.default_timeout)
+            self.logger.info(f"⏱️ WebDriverWait configurado com timeout: {self.default_timeout}s")
             
-            # Maximizar janela
-            self.driver.maximize_window()
+            # TESTE CRÍTICO: Verificar se consegue controlar o browser
+            self.logger.info("🧪 TESTE CRÍTICO: Verificando controle do browser...")
             
-            self.logger.info("Driver configurado com sucesso")
+            try:
+                # Tentar obter URL atual
+                current_url = self.driver.current_url
+                self.logger.info(f"✅ SUCESSO: URL atual obtida: {current_url}")
+                
+                # Tentar obter título
+                title = self.driver.title  
+                self.logger.info(f"✅ SUCESSO: Título obtido: {title}")
+                
+                # Tentar obter window handles (abas)
+                windows = self.driver.window_handles
+                self.logger.info(f"✅ SUCESSO: {len(windows)} aba(s) detectada(s)")
+                
+                # Verificar se consegue executar JavaScript
+                result = self.driver.execute_script("return 'TESTE_JS_OK';")
+                if result == 'TESTE_JS_OK':
+                    self.logger.info("✅ SUCESSO: JavaScript executado com sucesso")
+                else:
+                    self.logger.warning("⚠️ JavaScript retornou resultado inesperado")
+                
+            except Exception as test_error:
+                self.logger.error(f"❌ FALHA no teste de controle: {str(test_error)}")
+                return False
+            
+            # Maximizar janela com verificação
+            try:
+                self.logger.info("📺 Maximizando janela do browser...")
+                self.driver.maximize_window()
+                time.sleep(1)  # Aguardar maximização
+                self.logger.info("✅ Janela maximizada com sucesso")
+            except Exception as max_error:
+                self.logger.warning(f"⚠️ Não foi possível maximizar janela: {str(max_error)}")
+            
+            self.logger.info("🎉 Driver configurado com TOTAL SUCESSO e CONTROLE VERIFICADO!")
             return True
             
         except Exception as e:
-            self.logger.error(f"Erro ao configurar driver: {str(e)}")
+            self.logger.error(f"💥 ERRO CRÍTICO ao configurar driver: {str(e)}")
+            self.logger.error(f"📍 Detalhes do erro: {type(e).__name__}")
+            return False
+    
+    def prepare_browser_for_navigation(self) -> bool:
+        """🛠️ Preparar browser CALCULADAMENTE para navegação eficaz"""
+        try:
+            self.logger.info("🛠️ PREPARANDO browser com controle EXTREMAMENTE CALCULADO...")
+            
+            if not self.driver:
+                self.logger.error("❌ Driver não está disponível")
+                return False
+            
+            # ETAPA 1: Verificar estado atual do browser
+            self.logger.info("📊 ETAPA 1: Verificando estado atual do browser...")
+            
+            try:
+                current_url = self.driver.current_url
+                title = self.driver.title or "Sem título"
+                windows = self.driver.window_handles
+                
+                self.logger.info(f"📍 URL atual: {current_url}")
+                self.logger.info(f"📄 Título atual: {title}")
+                self.logger.info(f"🪟 Número de abas: {len(windows)}")
+                
+            except Exception as state_error:
+                self.logger.error(f"❌ Erro ao verificar estado: {str(state_error)}")
+                return False
+            
+            # ETAPA 2: Abrir nova aba se necessário (estratégia mais segura)
+            self.logger.info("🆕 ETAPA 2: Abrindo nova aba para navegação limpa...")
+            
+            try:
+                # Abrir nova aba usando JavaScript (mais confiável)
+                self.driver.execute_script("window.open('about:blank', '_blank');")
+                time.sleep(2)  # Aguardar aba abrir
+                
+                # Mudar para a nova aba
+                new_windows = self.driver.window_handles
+                if len(new_windows) > len(windows):
+                    self.driver.switch_to.window(new_windows[-1])  # Última aba (nova)
+                    self.logger.info("✅ Nova aba criada e ativada com sucesso")
+                else:
+                    self.logger.warning("⚠️ Nova aba não detectada, usando aba atual")
+                
+            except Exception as tab_error:
+                self.logger.warning(f"⚠️ Erro ao criar nova aba: {str(tab_error)}")
+                self.logger.info("🔄 Continuando com aba atual...")
+            
+            # ETAPA 3: Verificar controle da aba ativa
+            self.logger.info("🎯 ETAPA 3: Verificando controle da aba ativa...")
+            
+            try:
+                # Executar teste simples de JavaScript
+                test_result = self.driver.execute_script("return document.readyState;")
+                self.logger.info(f"✅ Estado do documento: {test_result}")
+                
+                # Verificar se consegue acessar elementos básicos
+                body_present = self.driver.execute_script("return document.body !== null;")
+                self.logger.info(f"✅ Body presente: {body_present}")
+                
+            except Exception as control_error:
+                self.logger.error(f"❌ Falha no controle da aba: {str(control_error)}")
+                return False
+            
+            # ETAPA 4: Preparar para navegação via barra de endereço
+            self.logger.info("🔗 ETAPA 4: Preparando navegação direta...")
+            
+            try:
+                # Focar na janela para garantir que está ativa
+                self.driver.switch_to.window(self.driver.current_window_handle)
+                
+                # Aguardar um pouco para estabilizar
+                time.sleep(1)
+                
+                self.logger.info("✅ Browser preparado para navegação calculada")
+                
+            except Exception as prep_error:
+                self.logger.error(f"❌ Erro na preparação final: {str(prep_error)}")
+                return False
+            
+            self.logger.info("🎉 Browser TOTALMENTE PREPARADO para navegação eficaz!")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"💥 ERRO CRÍTICO na preparação do browser: {str(e)}")
+            return False
+    
+    def navigate_with_extreme_calculation(self, target_url: str) -> bool:
+        """🧮 Navegação EXTREMAMENTE CALCULADA e EFICAZ"""
+        try:
+            self.logger.info(f"🧮 INICIANDO navegação EXTREMAMENTE CALCULADA para: {target_url}")
+            
+            if not self.driver:
+                self.logger.error("❌ Driver não disponível")
+                return False
+            
+            # MÉTODO 1: Navegação direta (mais rápida)
+            self.logger.info("🚀 MÉTODO 1: Tentativa de navegação direta...")
+            try:
+                self.driver.get(target_url)
+                time.sleep(3)  # Aguardar carregamento
+                
+                # Verificar se deu certo
+                final_url = self.driver.current_url
+                if target_url.replace("https://", "").replace("http://", "") in final_url:
+                    self.logger.info("✅ MÉTODO 1 SUCESSO: Navegação direta funcionou")
+                    return True
+                else:
+                    self.logger.warning(f"⚠️ MÉTODO 1 FALHOU: URL esperada não alcançada. Final: {final_url}")
+            
+            except Exception as method1_error:
+                self.logger.warning(f"⚠️ MÉTODO 1 ERRO: {str(method1_error)}")
+            
+            # MÉTODO 2: Navegação via JavaScript (alternativa)
+            self.logger.info("🔧 MÉTODO 2: Tentativa via JavaScript...")
+            try:
+                js_code = f"window.location.href = '{target_url}';"
+                self.driver.execute_script(js_code)
+                time.sleep(4)  # Aguardar mais tempo para JS
+                
+                # Verificar se deu certo
+                final_url = self.driver.current_url
+                if target_url.replace("https://", "").replace("http://", "") in final_url:
+                    self.logger.info("✅ MÉTODO 2 SUCESSO: Navegação via JavaScript funcionou")
+                    return True
+                else:
+                    self.logger.warning(f"⚠️ MÉTODO 2 FALHOU: URL esperada não alcançada. Final: {final_url}")
+            
+            except Exception as method2_error:
+                self.logger.warning(f"⚠️ MÉTODO 2 ERRO: {str(method2_error)}")
+            
+            # MÉTODO 3: Simular interação com barra de endereço (mais manual)
+            self.logger.info("⌨️ MÉTODO 3: Simulando interação manual com barra de endereço...")
+            try:
+                # Tentar usar Ctrl+L para focar na barra de endereço
+                from selenium.webdriver.common.action_chains import ActionChains
+                from selenium.webdriver.common.keys import Keys
+                
+                actions = ActionChains(self.driver)
+                actions.key_down(Keys.CONTROL).send_keys('l').key_up(Keys.CONTROL).perform()
+                time.sleep(1)
+                
+                # Digitar URL
+                actions = ActionChains(self.driver)
+                actions.send_keys(target_url).send_keys(Keys.RETURN).perform()
+                time.sleep(5)  # Aguardar navegação
+                
+                # Verificar se deu certo
+                final_url = self.driver.current_url
+                if target_url.replace("https://", "").replace("http://", "") in final_url:
+                    self.logger.info("✅ MÉTODO 3 SUCESSO: Simulação manual funcionou")
+                    return True
+                else:
+                    self.logger.warning(f"⚠️ MÉTODO 3 FALHOU: URL esperada não alcançada. Final: {final_url}")
+            
+            except Exception as method3_error:
+                self.logger.warning(f"⚠️ MÉTODO 3 ERRO: {str(method3_error)}")
+            
+            # Se chegou aqui, todos os métodos falharam
+            self.logger.error("💥 FALHA TOTAL: Todos os 3 métodos de navegação falharam")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"💥 ERRO CRÍTICO na navegação calculada: {str(e)}")
             return False
     
     def navigate_to_google_ads(self) -> bool:
-        """🌐 Navegar para Google Ads com MÚLTIPLAS TENTATIVAS e FALLBACKS ROBUSTOS"""
-        
-        # URLs alternativas para tentar em ordem de prioridade
-        target_urls = [
-            "https://ads.google.com/aw/",
-            "https://ads.google.com/home/",
-            "https://ads.google.com/",
-            "https://ads.google.com/aw/campaigns/",
-            "https://ads.google.com/aw/overview/"
-        ]
-        
-        for attempt in range(len(target_urls)):
-            try:
-                target_url = target_urls[attempt]
-                self.logger.info(f"🌐 TENTATIVA {attempt + 1}: Navegando para {target_url}")
+        """🌐 Navegar para Google Ads usando o sistema EXTREMAMENTE CALCULADO"""
+        try:
+            self.logger.info("🌐 INICIANDO navegação para Google Ads com sistema CALCULADO...")
+            
+            if not self.driver:
+                self.logger.error("❌ Driver não está inicializado!")
+                return False
+            
+            # PRIMEIRO: Preparar browser para navegação eficaz
+            self.logger.info("🛠️ Preparando browser para controle total...")
+            if not self.prepare_browser_for_navigation():
+                self.logger.error("❌ FALHA na preparação do browser")
+                return False
+            
+            # SEGUNDO: Usar navegação extremamente calculada
+            target_urls = [
+                "https://ads.google.com/aw/",
+                "https://ads.google.com/home/", 
+                "https://ads.google.com/",
+                "https://ads.google.com/aw/campaigns/",
+                "https://ads.google.com/aw/overview/"
+            ]
+            
+            for attempt, target_url in enumerate(target_urls, 1):
+                self.logger.info(f"🎯 TENTATIVA {attempt}: Navegação CALCULADA para {target_url}")
                 
-                if not self.driver:
-                    self.logger.error("❌ Driver não está inicializado!")
-                    return False
-                
-                # Verificar URL atual antes
-                try:
-                    current_url = self.driver.current_url
-                    self.logger.info(f"📍 URL atual: {current_url}")
-                except:
-                    self.logger.warning("⚠️ Não foi possível obter URL atual")
-                
-                # Navegar para URL alvo
-                self.logger.info(f"🚀 Navegando para: {target_url}")
-                self.driver.get(target_url)
-                
-                # Aguardar carregamento inicial com timeout inteligente
-                self.logger.info("⏳ Aguardando carregamento inicial...")
-                time.sleep(self.default_delay * (attempt + 1))  # Aumenta tempo conforme tentativas
-                
-                # Aguardar página carregar completamente
-                self.logger.info("⏳ Aguardando página carregar completamente...")
-                if not self.wait_for_page_load(timeout=30):
-                    self.logger.warning("⚠️ Timeout no carregamento da página")
-                
-                # Verificar se chegou na página correta
-                final_url = self.driver.current_url
-                self.logger.info(f"🎯 URL final obtida: {final_url}")
-                
-                # Verificar título da página
-                try:
-                    title = self.driver.title
-                    self.logger.info(f"📄 Título da página: {title}")
-                except:
-                    self.logger.warning("⚠️ Não foi possível obter título da página")
-                    title = ""
-                
-                # Fechar popups que podem aparecer
-                self.logger.info("🚫 Fechando popups que podem atrapalhar...")
-                self.close_popups()
-                
-                # Tirar screenshot para debug desta tentativa
-                screenshot_path = self.take_screenshot(f"etapa_navegacao_tentativa_{attempt + 1}.png")
-                self.logger.info(f"📸 Screenshot salvo: {screenshot_path}")
-                
-                # Análise detalhada do conteúdo da página
-                page_source = self.driver.page_source.lower()
-                success_indicators = [
-                    ("campanhas" in page_source, "palavra 'campanhas' encontrada"),
-                    ("campaigns" in page_source, "palavra 'campaigns' encontrada"),
-                    ("google ads" in title.lower(), "título contém 'Google Ads'"),
-                    ("ads.google.com" in final_url.lower(), "URL contém 'ads.google.com'"),
-                    ("overview" in final_url.lower(), "URL contém 'overview'"),
-                    ("campaign" in page_source, "palavra 'campaign' encontrada")
-                ]
-                
-                success_count = 0
-                for indicator_found, description in success_indicators:
-                    if indicator_found:
-                        self.logger.info(f"✅ INDICADOR DE SUCESSO: {description}")
-                        success_count += 1
-                    else:
-                        self.logger.debug(f"❌ Indicador não encontrado: {description}")
-                
-                # Verificar status de login
-                if "entrar" in page_source or "sign in" in page_source or "login" in page_source:
-                    self.logger.warning(f"⚠️ TENTATIVA {attempt + 1}: Detectado página de login - continuando para próxima URL...")
-                    continue  # Continuar para próxima URL em vez de parar
-                elif success_count >= 2:  # Pelo menos 2 indicadores de sucesso
-                    self.logger.info(f"🎉 SUCESSO na tentativa {attempt + 1}! {success_count} indicadores positivos")
+                # Usar o método extremamente calculado
+                if self.navigate_with_extreme_calculation(target_url):
+                    self.logger.info(f"✅ SUCESSO na tentativa {attempt}!")
                     
-                    # Verificar se consegue encontrar elementos típicos do Google Ads
+                    # Verificar qualidade da navegação com análise detalhada
                     try:
-                        # Procurar por elementos comuns do dashboard
-                        common_elements = [
-                            "//nav", "//button", "//div[contains(@class, 'menu')]", 
-                            "//*[contains(text(), 'Campaign') or contains(text(), 'Campanha')]"
+                        time.sleep(3)  # Aguardar estabilização
+                        
+                        final_url = self.driver.current_url
+                        title = self.driver.title or ""
+                        page_source = self.driver.page_source.lower()
+                        
+                        self.logger.info(f"🎯 URL final: {final_url}")
+                        self.logger.info(f"📄 Título: {title}")
+                        
+                        # Análise detalhada dos indicadores de sucesso
+                        success_indicators = [
+                            ("campanhas" in page_source, "palavra 'campanhas' encontrada"),
+                            ("campaigns" in page_source, "palavra 'campaigns' encontrada"), 
+                            ("google ads" in title.lower(), "título contém 'Google Ads'"),
+                            ("ads.google.com" in final_url.lower(), "URL contém 'ads.google.com'"),
+                            ("overview" in final_url.lower(), "URL contém 'overview'"),
+                            ("campaign" in page_source, "palavra 'campaign' encontrada")
                         ]
                         
-                        elements_found = 0
-                        for element_xpath in common_elements:
-                            try:
-                                elements = self.driver.find_elements(By.XPATH, element_xpath)
-                                if elements:
-                                    elements_found += 1
-                                    self.logger.info(f"✅ Elemento encontrado: {element_xpath}")
-                            except:
-                                pass
+                        success_count = 0
+                        for indicator_found, description in success_indicators:
+                            if indicator_found:
+                                self.logger.info(f"✅ INDICADOR: {description}")
+                                success_count += 1
                         
-                        self.logger.info(f"📊 Encontrados {elements_found} elementos comuns do dashboard")
+                        # Verificar status de login
+                        login_indicators = ["entrar", "sign in", "login"]
+                        login_detected = any(indicator in page_source for indicator in login_indicators)
                         
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Erro ao verificar elementos: {str(e)}")
-                    
-                    return True
+                        if login_detected:
+                            self.logger.warning(f"⚠️ Página de login detectada - tentando próxima URL...")
+                            continue
+                        elif success_count >= 2:
+                            self.logger.info(f"🎉 NAVEGAÇÃO CALCULADA CONCLUÍDA COM SUCESSO! {success_count} indicadores")
+                            
+                            # Screenshot final de sucesso
+                            self.take_screenshot("navegacao_calculada_sucesso.png")
+                            return True
+                        else:
+                            self.logger.warning(f"⚠️ Apenas {success_count} indicadores - tentando próxima URL...")
+                            continue
+                            
+                    except Exception as analysis_error:
+                        self.logger.error(f"❌ Erro na análise pós-navegação: {str(analysis_error)}")
+                        continue
+                
                 else:
-                    self.logger.warning(f"⚠️ TENTATIVA {attempt + 1} INCONCLUSIVA: apenas {success_count} indicadores positivos")
-                
-            except Exception as e:
-                self.logger.error(f"💥 ERRO na tentativa {attempt + 1}: {str(e)}")
-                try:
-                    current_url = self.driver.current_url if self.driver else "Driver não disponível"
-                    self.logger.error(f"📍 URL no momento do erro: {current_url}")
-                    self.take_screenshot(f"erro_tentativa_{attempt + 1}.png")
-                except:
-                    pass
-                
-                # Se não é a última tentativa, continua
-                if attempt < len(target_urls) - 1:
-                    self.logger.info(f"🔄 Tentando próxima URL em {self.retry_delay} segundos...")
-                    time.sleep(self.retry_delay)
-                    continue
-        
-        # Se chegou aqui, todas as tentativas falharam
-        self.logger.error("💥 FALHA TOTAL: Todas as tentativas de navegação falharam")
-        return False
+                    self.logger.warning(f"⚠️ Tentativa {attempt} falhou - tentando próxima...")
+                    time.sleep(2)  # Pausa entre tentativas
+            
+            # Se chegou aqui, todas as tentativas falharam
+            self.logger.error("💥 FALHA TOTAL: Todas as tentativas de navegação calculada falharam")
+            self.take_screenshot("navegacao_calculada_falha_total.png")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"💥 ERRO CRÍTICO na navegação calculada: {str(e)}")
+            self.take_screenshot("navegacao_calculada_erro_critico.png")
+            return False
     
     def close_popups(self):
         """Fechar popups e elementos que podem atrapalhar"""
@@ -1116,17 +1291,50 @@ class GoogleAdsAutomation:
             self.logger.info("✅ ETAPA 1 COMPLETA: Driver configurado com sucesso")
             self.take_screenshot("etapa_1_driver_ok.png")
             
-            # ETAPA 2: Navegar para Google Ads (com múltiplas tentativas)
-            self.logger.info("🌐 ETAPA 2: Navegando para Google Ads com sistema robusto...")
-            self.take_screenshot("etapa_2_antes_navegacao.png")
+            # ETAPA 2: Preparar browser para navegação calculada
+            self.logger.info("🛠️ ETAPA 2A: Preparando browser para controle total...")
+            self.take_screenshot("etapa_2a_antes_preparacao.png")
             
-            if not self.navigate_to_google_ads():
-                self.logger.error("❌ FALHA na ETAPA 2: Não conseguiu navegar para Google Ads")
-                self.take_screenshot("etapa_2_erro_navegacao.png")
+            if not self.prepare_browser_for_navigation():
+                self.logger.error("❌ FALHA na ETAPA 2A: Não conseguiu preparar browser")
+                self.take_screenshot("etapa_2a_erro_preparacao.png")
                 return False
             
-            self.logger.info("✅ ETAPA 2 COMPLETA: Navegação para Google Ads bem-sucedida")
-            self.take_screenshot("etapa_2_navegacao_ok.png")
+            self.logger.info("✅ ETAPA 2A COMPLETA: Browser preparado para controle total")
+            self.take_screenshot("etapa_2a_preparacao_ok.png")
+            
+            # ETAPA 2B: Navegação EXTREMAMENTE CALCULADA
+            self.logger.info("🧮 ETAPA 2B: Navegação EXTREMAMENTE CALCULADA para Google Ads...")
+            self.take_screenshot("etapa_2b_antes_navegacao.png")
+            
+            # Tentar múltiplas URLs com navegação calculada
+            target_urls = [
+                "https://ads.google.com/aw/",
+                "https://ads.google.com/home/",
+                "https://ads.google.com/",
+                "https://ads.google.com/aw/campaigns/",
+                "https://ads.google.com/aw/overview/"
+            ]
+            
+            navigation_success = False
+            for attempt, url in enumerate(target_urls, 1):
+                self.logger.info(f"🎯 TENTATIVA {attempt}: Navegação calculada para {url}")
+                
+                if self.navigate_with_extreme_calculation(url):
+                    self.logger.info(f"✅ SUCESSO na tentativa {attempt}!")
+                    navigation_success = True
+                    break
+                else:
+                    self.logger.warning(f"⚠️ Tentativa {attempt} falhou, tentando próxima...")
+                    time.sleep(2)  # Pausa entre tentativas
+            
+            if not navigation_success:
+                self.logger.error("❌ FALHA na ETAPA 2B: Todas as tentativas de navegação falharam")
+                self.take_screenshot("etapa_2b_erro_navegacao.png")
+                return False
+            
+            self.logger.info("✅ ETAPA 2B COMPLETA: Navegação calculada bem-sucedida")
+            self.take_screenshot("etapa_2b_navegacao_ok.png")
             
             # ETAPA 3: Aguardar carregamento e verificar estado
             self.logger.info("⏳ ETAPA 3: Verificando estado da página após navegação...")
