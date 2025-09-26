@@ -97,11 +97,15 @@ class GoogleAdsAutomation:
     def navigate_to_google_ads(self) -> bool:
         """Navegar para o Google Ads"""
         try:
-            self.driver.get("https://ads.google.com")
+            # URL correta do Google Ads conforme especificado
+            self.driver.get("https://ads.google.com/aw/")
             time.sleep(self.default_delay)
             
             # Verificar se chegou na página correta
             self.wait.until(lambda d: "ads.google.com" in d.current_url.lower())
+            
+            # Fechar popups que podem aparecer
+            self.close_popups()
             
             self.logger.info("Navegou para Google Ads com sucesso")
             return True
@@ -109,6 +113,45 @@ class GoogleAdsAutomation:
         except Exception as e:
             self.logger.error(f"Erro ao navegar para Google Ads: {str(e)}")
             return False
+    
+    def close_popups(self):
+        """Fechar popups e elementos que podem atrapalhar"""
+        try:
+            # Lista de seletores de popups comuns do Google Ads
+            popup_selectors = [
+                # Popup de cookies
+                "//button[contains(text(), 'Aceitar')] | //button[contains(text(), 'Accept')]",
+                "//button[contains(text(), 'OK')] | //button[contains(text(), 'Ok')]",
+                "//button[contains(@aria-label, 'Fechar')] | //button[contains(@aria-label, 'Close')]",
+                "//div[contains(@class, 'close')] | //button[contains(@class, 'close')]",
+                # Popup de tour/introdução
+                "//button[contains(text(), 'Pular')] | //button[contains(text(), 'Skip')]",
+                "//button[contains(text(), 'Não agora')] | //button[contains(text(), 'Not now')]",
+                "//button[contains(text(), 'Dispensar')] | //button[contains(text(), 'Dismiss')]",
+                # Popup de notificações
+                "//button[contains(text(), 'Bloquear')] | //button[contains(text(), 'Block')]",
+                "//button[contains(text(), 'Permitir')] | //button[contains(text(), 'Allow')]",
+                # X para fechar
+                "//button[@aria-label='Fechar'] | //button[@aria-label='Close']",
+                "//span[text()='×'] | //span[text()='✕']"
+            ]
+            
+            for selector in popup_selectors:
+                try:
+                    # Tentar encontrar e clicar no popup (timeout curto)
+                    if self.driver and self.wait:
+                        element = WebDriverWait(self.driver, 2).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                        element.click()
+                        self.logger.info(f"Popup fechado: {selector}")
+                        time.sleep(1)
+                except:
+                    continue  # Se não encontrar, continua para o próximo
+                    
+        except Exception as e:
+            self.logger.debug(f"Erro ao fechar popups: {str(e)}")
+            # Não é erro crítico, continua a execução
     
     def wait_for_page_load(self, timeout: int = None) -> bool:
         """Aguardar carregamento da página"""

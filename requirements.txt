@@ -1,7 +1,7 @@
-selenium==4.35.0
+selenium==4.27.1
 webdriver-manager==4.0.2
-requests==2.32.5
+requests==2.32.3
 undetected-chromedriver==3.5.5
 selenium-stealth==1.0.6
-pandas==2.3.2
+pandas==1.5.3
 adspower==2.1.0

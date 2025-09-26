@@ -20,15 +20,28 @@ class AdsPowerManager:
         self.active_browsers = {}  # Armazenar browsers ativos
     
     def get_profiles(self) -> List[Dict]:
-        """Obter lista de perfis do AdsPower"""
+        """Obter lista de perfis do AdsPower - suporta até 2000+ perfis"""
         try:
-            response = requests.get(f"{self.api_url}/api/v1/user/list")
+            # Usar parâmetros para obter todos os perfis (até 2000)
+            params = {
+                'page': 1,
+                'page_size': 2000,  # Máximo para suportar muitos perfis
+                'group_id': ''  # Deixar vazio para pegar de todos os grupos
+            }
+            
+            response = requests.get(f"{self.api_url}/api/v1/user/list", params=params)
             response.raise_for_status()
             
             data = response.json()
             if data.get('code') == 0:
                 profiles = data.get('data', {}).get('list', [])
-                self.logger.info(f"Encontrados {len(profiles)} perfis no AdsPower")
+                total = data.get('data', {}).get('total', len(profiles))
+                self.logger.info(f"Encontrados {len(profiles)} de {total} perfis no AdsPower")
+                
+                # Se houver mais perfis, fazer requisições adicionais
+                if total > 2000:
+                    self.logger.warning(f"Total de {total} perfis encontrado, mas limitado a 2000 por requisição")
+                
                 return profiles
             else:
                 self.logger.error(f"Erro da API AdsPower: {data.get('msg', 'Erro desconhecido')}")

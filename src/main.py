@@ -74,53 +74,83 @@ class GoogleAdsCampaignBot:
         self.setup_settings_tab(notebook)
     
     def setup_profiles_tab(self, notebook):
-        """Configurar aba de perfis do AdsPower"""
+        """Configurar aba de perfis do AdsPower - com checkboxes e suporte a 2000+ perfis"""
         profiles_frame = ttk.Frame(notebook)
         notebook.add(profiles_frame, text="👥 Perfis AdsPower")
         
-        # Frame superior - controles
-        control_frame = tk.Frame(profiles_frame, bg='#ecf0f1', height=80)
-        control_frame.pack(fill='x', padx=10, pady=5)
-        control_frame.pack_propagate(False)
+        # Header estilizado
+        header_frame = tk.Frame(profiles_frame, bg='#2c3e50', height=60)
+        header_frame.pack(fill='x', padx=0, pady=0)
+        header_frame.pack_propagate(False)
         
-        tk.Label(control_frame, text="Perfis do AdsPower:", 
-                font=('Arial', 12, 'bold'), bg='#ecf0f1').pack(side='left', pady=20)
+        header_label = tk.Label(header_frame, text="👥 Seleção de Perfis do AdsPower", 
+                               font=('Arial', 14, 'bold'), fg='white', bg='#2c3e50')
+        header_label.pack(side='left', padx=20, pady=15)
         
-        refresh_btn = tk.Button(control_frame, text="🔄 Atualizar Perfis", 
+        refresh_btn = tk.Button(header_frame, text="🔄 Atualizar Perfis", 
                                command=self.refresh_profiles,
-                               bg='#3498db', fg='white', font=('Arial', 10, 'bold'))
-        refresh_btn.pack(side='right', padx=10, pady=20)
+                               bg='#3498db', fg='white', font=('Arial', 10, 'bold'),
+                               relief='flat', padx=20, pady=5)
+        refresh_btn.pack(side='right', padx=20, pady=15)
         
-        # Lista de perfis com checkboxes
-        list_frame = tk.Frame(profiles_frame)
-        list_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        # Frame de busca
+        search_frame = tk.Frame(profiles_frame, bg='#ecf0f1', height=50)
+        search_frame.pack(fill='x', padx=10, pady=5)
+        search_frame.pack_propagate(False)
         
-        # Scrollbar para lista
-        scrollbar = tk.Scrollbar(list_frame)
-        scrollbar.pack(side='right', fill='y')
+        tk.Label(search_frame, text="🔍 Buscar:", font=('Arial', 10), bg='#ecf0f1').pack(side='left', padx=10, pady=10)
+        self.search_entry = tk.Entry(search_frame, font=('Arial', 10), width=30)
+        self.search_entry.pack(side='left', padx=5, pady=10)
+        self.search_entry.bind('<KeyRelease>', self.filter_profiles)
         
-        self.profiles_listbox = tk.Listbox(list_frame, selectmode='multiple',
-                                          yscrollcommand=scrollbar.set,
-                                          font=('Arial', 10))
-        self.profiles_listbox.pack(fill='both', expand=True)
-        scrollbar.config(command=self.profiles_listbox.yview)
+        # Botões de seleção em massa
+        buttons_frame = tk.Frame(search_frame, bg='#ecf0f1')
+        buttons_frame.pack(side='right', padx=10, pady=5)
         
-        # Frame inferior - perfis selecionados
-        selected_frame = tk.Frame(profiles_frame, bg='#ecf0f1', height=100)
-        selected_frame.pack(fill='x', padx=10, pady=5)
-        selected_frame.pack_propagate(False)
+        select_all_btn = tk.Button(buttons_frame, text="Selecionar Todos", 
+                                  command=self.select_all_profiles,
+                                  bg='#27ae60', fg='white', font=('Arial', 9),
+                                  relief='flat', padx=10)
+        select_all_btn.pack(side='left', padx=2)
         
-        tk.Label(selected_frame, text="Perfis Selecionados:", 
-                font=('Arial', 10, 'bold'), bg='#ecf0f1').pack(anchor='w', padx=10, pady=5)
+        deselect_all_btn = tk.Button(buttons_frame, text="Limpar Tudo", 
+                                    command=self.deselect_all_profiles,
+                                    bg='#e74c3c', fg='white', font=('Arial', 9),
+                                    relief='flat', padx=10)
+        deselect_all_btn.pack(side='left', padx=2)
         
-        self.selected_label = tk.Label(selected_frame, text="Nenhum perfil selecionado", 
-                                      bg='#ecf0f1', fg='#7f8c8d')
-        self.selected_label.pack(anchor='w', padx=10)
+        # Frame principal com scrollbar para checkboxes
+        main_frame = tk.Frame(profiles_frame)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
-        select_btn = tk.Button(selected_frame, text="✓ Confirmar Seleção", 
-                              command=self.update_selected_profiles,
-                              bg='#27ae60', fg='white', font=('Arial', 10, 'bold'))
-        select_btn.pack(side='right', padx=10, pady=5)
+        # Canvas e scrollbar para muitos perfis
+        self.profiles_canvas = tk.Canvas(main_frame, bg='white')
+        scrollbar = tk.Scrollbar(main_frame, orient='vertical', command=self.profiles_canvas.yview)
+        self.profiles_scrollable_frame = tk.Frame(self.profiles_canvas, bg='white')
+        
+        self.profiles_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.profiles_canvas.configure(scrollregion=self.profiles_canvas.bbox("all"))
+        )
+        
+        self.profiles_canvas.create_window((0, 0), window=self.profiles_scrollable_frame, anchor="nw")
+        self.profiles_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        self.profiles_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Variáveis para checkboxes dos perfis
+        self.profile_vars = {}
+        self.profile_checkboxes = {}
+        
+        # Status no rodapé
+        status_frame = tk.Frame(profiles_frame, bg='#34495e', height=40)
+        status_frame.pack(fill='x', padx=0, pady=0)
+        status_frame.pack_propagate(False)
+        
+        self.profiles_status_label = tk.Label(status_frame, text="Aguardando carregamento de perfis...", 
+                                             font=('Arial', 10), fg='white', bg='#34495e')
+        self.profiles_status_label.pack(pady=10)
     
     def setup_campaign_tab(self, notebook):
         """Configurar aba de configuração de campanhas"""
@@ -155,12 +185,11 @@ class GoogleAdsCampaignBot:
         self.budget_entry = tk.Entry(basic_frame, width=20, font=('Arial', 10))
         self.budget_entry.grid(row=1, column=1, sticky='w', padx=10, pady=5)
         
-        # Tipo de campanha
+        # Tipo de campanha (apenas pesquisa)
         tk.Label(basic_frame, text="Tipo de Campanha:", font=('Arial', 10)).grid(row=2, column=0, sticky='w', pady=5)
-        self.campaign_type_combo = ttk.Combobox(basic_frame, width=30, 
-                                               values=["Pesquisa", "Display", "Shopping", "Vídeo"])
-        self.campaign_type_combo.set("Pesquisa")
-        self.campaign_type_combo.grid(row=2, column=1, sticky='w', padx=10, pady=5)
+        self.campaign_type_label = tk.Label(basic_frame, text="🔍 Pesquisa (Google Search)", 
+                                           font=('Arial', 10, 'bold'), fg='#2c3e50')
+        self.campaign_type_label.grid(row=2, column=1, sticky='w', padx=10, pady=5)
         
         # Palavras-chave
         keywords_frame = tk.LabelFrame(scrollable_frame, text="🎯 Palavras-chave", 
@@ -171,35 +200,50 @@ class GoogleAdsCampaignBot:
         self.keywords_text = scrolledtext.ScrolledText(keywords_frame, height=8, width=80, font=('Arial', 10))
         self.keywords_text.pack(fill='x', padx=5, pady=5)
         
-        # Localização
-        location_frame = tk.LabelFrame(scrollable_frame, text="📍 Segmentação Geográfica", 
+        # Idioma e Localização
+        location_frame = tk.LabelFrame(scrollable_frame, text="🌍 Segmentação Geográfica e Idioma", 
                                       font=('Arial', 12, 'bold'), padx=10, pady=10)
         location_frame.pack(fill='x', padx=10, pady=5)
         
-        tk.Label(location_frame, text="Localização:", font=('Arial', 10)).pack(anchor='w')
-        self.location_entry = tk.Entry(location_frame, width=50, font=('Arial', 10))
-        self.location_entry.pack(fill='x', padx=5, pady=5)
-        self.location_entry.insert(0, "Brasil")
+        # Idioma
+        tk.Label(location_frame, text="Idioma da Campanha:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
+        self.language_combo = ttk.Combobox(location_frame, width=30, 
+                                          values=["Português (Brasil)", "Português (Portugal)", "Inglês (EUA)", 
+                                                 "Inglês (Reino Unido)", "Espanhol", "Francês", "Italiano", "Alemão"])
+        self.language_combo.set("Português (Brasil)")
+        self.language_combo.grid(row=0, column=1, sticky='w', padx=10, pady=5)
         
-        # Anúncios
-        ads_frame = tk.LabelFrame(scrollable_frame, text="📝 Configuração dos Anúncios", 
+        # Localizações (múltiplas)
+        tk.Label(location_frame, text="Localizações (uma por linha):", font=('Arial', 10)).grid(row=1, column=0, sticky='nw', pady=5)
+        self.locations_text = scrolledtext.ScrolledText(location_frame, height=4, width=50, font=('Arial', 10))
+        self.locations_text.grid(row=1, column=1, padx=10, pady=5, sticky='ew')
+        self.locations_text.insert(1.0, "Brasil\nSão Paulo, Brasil\nRio de Janeiro, Brasil")
+        
+        location_frame.grid_columnconfigure(1, weight=1)
+        
+        # Anúncios com múltiplos títulos
+        ads_frame = tk.LabelFrame(scrollable_frame, text="📝 Configuração dos Anúncios (Até 15 Títulos)", 
                                  font=('Arial', 12, 'bold'), padx=10, pady=10)
         ads_frame.pack(fill='x', padx=10, pady=5)
         
-        # Título do anúncio
-        tk.Label(ads_frame, text="Título do Anúncio:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
-        self.ad_title_entry = tk.Entry(ads_frame, width=50, font=('Arial', 10))
-        self.ad_title_entry.grid(row=0, column=1, padx=10, pady=5)
+        # Títulos dos anúncios (até 15)
+        tk.Label(ads_frame, text="Títulos dos Anúncios (um por linha, até 15):", font=('Arial', 10)).grid(row=0, column=0, sticky='nw', pady=5)
+        self.ad_titles_text = scrolledtext.ScrolledText(ads_frame, height=8, width=60, font=('Arial', 10))
+        self.ad_titles_text.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+        self.ad_titles_text.insert(1.0, "Seu Produto Incrivel Aqui\nOferta Especial Limitada\nSolução Perfeita Para Você")
         
-        # Descrição
-        tk.Label(ads_frame, text="Descrição:", font=('Arial', 10)).grid(row=1, column=0, sticky='w', pady=5)
-        self.ad_description_entry = tk.Entry(ads_frame, width=50, font=('Arial', 10))
-        self.ad_description_entry.grid(row=1, column=1, padx=10, pady=5)
+        # Descrições (até 4)
+        tk.Label(ads_frame, text="Descrições (uma por linha, até 4):", font=('Arial', 10)).grid(row=1, column=0, sticky='nw', pady=5)
+        self.ad_descriptions_text = scrolledtext.ScrolledText(ads_frame, height=4, width=60, font=('Arial', 10))
+        self.ad_descriptions_text.grid(row=1, column=1, padx=10, pady=5, sticky='ew')
+        self.ad_descriptions_text.insert(1.0, "Descubra a melhor solução do mercado. Qualidade garantida!\nCompre agora e economize até 50%. Entrega rápida em todo Brasil.")
         
         # URL de destino
         tk.Label(ads_frame, text="URL de Destino:", font=('Arial', 10)).grid(row=2, column=0, sticky='w', pady=5)
-        self.landing_url_entry = tk.Entry(ads_frame, width=50, font=('Arial', 10))
-        self.landing_url_entry.grid(row=2, column=1, padx=10, pady=5)
+        self.landing_url_entry = tk.Entry(ads_frame, width=60, font=('Arial', 10))
+        self.landing_url_entry.grid(row=2, column=1, padx=10, pady=5, sticky='ew')
+        
+        ads_frame.grid_columnconfigure(1, weight=1)
         
         # Botões de ação
         action_frame = tk.Frame(scrollable_frame)
@@ -326,34 +370,95 @@ class GoogleAdsCampaignBot:
         self.logger.addHandler(gui_handler)
     
     def refresh_profiles(self):
-        """Atualizar lista de perfis do AdsPower"""
+        """Atualizar lista de perfis do AdsPower com checkboxes"""
         try:
             profiles = self.adspower_manager.get_profiles()
             self.profiles = profiles
             
-            self.profiles_listbox.delete(0, tk.END)
-            for profile in profiles:
-                display_text = f"{profile['name']} (ID: {profile['user_id']})"
-                self.profiles_listbox.insert(tk.END, display_text)
+            # Limpar checkboxes anteriores
+            for widget in self.profiles_scrollable_frame.winfo_children():
+                widget.destroy()
             
+            self.profile_vars.clear()
+            self.profile_checkboxes.clear()
+            
+            # Criar checkboxes para cada perfil
+            for i, profile in enumerate(profiles):
+                # Criar variável para checkbox
+                var = tk.BooleanVar()
+                self.profile_vars[profile['user_id']] = var
+                
+                # Criar frame para cada perfil
+                profile_frame = tk.Frame(self.profiles_scrollable_frame, bg='white', relief='solid', bd=1)
+                profile_frame.pack(fill='x', padx=5, pady=2)
+                
+                # Checkbox
+                checkbox = tk.Checkbutton(profile_frame, 
+                                        text=f"{profile['name']} (ID: {profile['user_id']})",
+                                        variable=var,
+                                        bg='white',
+                                        font=('Arial', 10),
+                                        anchor='w',
+                                        command=self.update_selected_count)
+                checkbox.pack(fill='x', padx=10, pady=5)
+                
+                self.profile_checkboxes[profile['user_id']] = checkbox
+            
+            # Atualizar status
+            self.profiles_status_label.config(text=f"✅ {len(profiles)} perfis carregados do AdsPower")
             self.logger.info(f"Carregados {len(profiles)} perfis do AdsPower")
             
         except Exception as e:
+            self.profiles_status_label.config(text="❌ Erro ao carregar perfis")
             messagebox.showerror("Erro", f"Erro ao carregar perfis: {str(e)}")
             self.logger.error(f"Erro ao carregar perfis: {str(e)}")
     
     def update_selected_profiles(self):
-        """Atualizar perfis selecionados"""
-        selected_indices = self.profiles_listbox.curselection()
-        self.selected_profiles = [self.profiles[i] for i in selected_indices]
+        """Atualizar perfis selecionados baseado nos checkboxes"""
+        self.selected_profiles = []
         
-        if self.selected_profiles:
-            profile_names = [p['name'] for p in self.selected_profiles]
-            self.selected_label.config(text=f"{len(profile_names)} perfis: {', '.join(profile_names[:3])}")
-            if len(profile_names) > 3:
-                self.selected_label.config(text=self.selected_label.cget('text') + f" e mais {len(profile_names) - 3}")
+        for profile in self.profiles:
+            if self.profile_vars.get(profile['user_id'], tk.BooleanVar()).get():
+                self.selected_profiles.append(profile)
+        
+        self.update_selected_count()
+    
+    def update_selected_count(self):
+        """Atualizar contador de perfis selecionados"""
+        self.update_selected_profiles()
+        count = len(self.selected_profiles)
+        
+        if count > 0:
+            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados | 🎯 {count} selecionados")
         else:
-            self.selected_label.config(text="Nenhum perfil selecionado")
+            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados | ⚠️ Nenhum selecionado")
+    
+    def filter_profiles(self, event=None):
+        """Filtrar perfis com base na busca"""
+        search_term = self.search_entry.get().lower()
+        
+        for profile in self.profiles:
+            checkbox = self.profile_checkboxes.get(profile['user_id'])
+            if checkbox:
+                profile_name = profile['name'].lower()
+                if search_term in profile_name or search_term in profile['user_id'].lower():
+                    checkbox.master.pack(fill='x', padx=5, pady=2)
+                else:
+                    checkbox.master.pack_forget()
+    
+    def select_all_profiles(self):
+        """Selecionar todos os perfis visíveis"""
+        for user_id, var in self.profile_vars.items():
+            checkbox = self.profile_checkboxes.get(user_id)
+            if checkbox and checkbox.master.winfo_viewable():
+                var.set(True)
+        self.update_selected_count()
+    
+    def deselect_all_profiles(self):
+        """Deselecionar todos os perfis"""
+        for var in self.profile_vars.values():
+            var.set(False)
+        self.update_selected_count()
     
     def save_campaign_config(self):
         """Salvar configuração da campanha"""
@@ -394,15 +499,19 @@ class GoogleAdsCampaignBot:
     def get_campaign_config(self):
         """Obter configuração atual da campanha"""
         keywords = [k.strip() for k in self.keywords_text.get(1.0, tk.END).strip().split('\n') if k.strip()]
+        locations = [l.strip() for l in self.locations_text.get(1.0, tk.END).strip().split('\n') if l.strip()]
+        ad_titles = [t.strip() for t in self.ad_titles_text.get(1.0, tk.END).strip().split('\n') if t.strip()][:15]  # Máximo 15 títulos
+        ad_descriptions = [d.strip() for d in self.ad_descriptions_text.get(1.0, tk.END).strip().split('\n') if d.strip()][:4]  # Máximo 4 descrições
         
         return {
             'campaign_name': self.campaign_name_entry.get(),
             'budget': self.budget_entry.get(),
-            'campaign_type': self.campaign_type_combo.get(),
+            'campaign_type': 'Pesquisa',  # Sempre pesquisa
+            'language': self.language_combo.get(),
             'keywords': keywords,
-            'location': self.location_entry.get(),
-            'ad_title': self.ad_title_entry.get(),
-            'ad_description': self.ad_description_entry.get(),
+            'locations': locations,
+            'ad_titles': ad_titles,
+            'ad_descriptions': ad_descriptions,
             'landing_url': self.landing_url_entry.get(),
             'delay': self.delay_entry.get(),
             'timeout': self.timeout_entry.get(),
@@ -417,20 +526,38 @@ class GoogleAdsCampaignBot:
         self.budget_entry.delete(0, tk.END)
         self.budget_entry.insert(0, config.get('budget', ''))
         
-        self.campaign_type_combo.set(config.get('campaign_type', 'Pesquisa'))
+        # Idioma
+        self.language_combo.set(config.get('language', 'Português (Brasil)'))
         
+        # Palavras-chave
         self.keywords_text.delete(1.0, tk.END)
         self.keywords_text.insert(1.0, '\n'.join(config.get('keywords', [])))
         
-        self.location_entry.delete(0, tk.END)
-        self.location_entry.insert(0, config.get('location', 'Brasil'))
+        # Localizações múltiplas
+        self.locations_text.delete(1.0, tk.END)
+        locations = config.get('locations', config.get('location', 'Brasil'))  # Compatibilidade com versão antiga
+        if isinstance(locations, str):
+            self.locations_text.insert(1.0, locations)
+        else:
+            self.locations_text.insert(1.0, '\n'.join(locations))
         
-        self.ad_title_entry.delete(0, tk.END)
-        self.ad_title_entry.insert(0, config.get('ad_title', ''))
+        # Títulos múltiplos
+        self.ad_titles_text.delete(1.0, tk.END)
+        ad_titles = config.get('ad_titles', [config.get('ad_title', '')])  # Compatibilidade com versão antiga
+        if isinstance(ad_titles, str):
+            self.ad_titles_text.insert(1.0, ad_titles)
+        else:
+            self.ad_titles_text.insert(1.0, '\n'.join(ad_titles))
         
-        self.ad_description_entry.delete(0, tk.END)
-        self.ad_description_entry.insert(0, config.get('ad_description', ''))
+        # Descrições múltiplas
+        self.ad_descriptions_text.delete(1.0, tk.END)
+        ad_descriptions = config.get('ad_descriptions', [config.get('ad_description', '')])  # Compatibilidade com versão antiga
+        if isinstance(ad_descriptions, str):
+            self.ad_descriptions_text.insert(1.0, ad_descriptions)
+        else:
+            self.ad_descriptions_text.insert(1.0, '\n'.join(ad_descriptions))
         
+        # URL de destino
         self.landing_url_entry.delete(0, tk.END)
         self.landing_url_entry.insert(0, config.get('landing_url', ''))
     
