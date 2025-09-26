@@ -18,6 +18,29 @@ class AdsPowerConfig:
     timeout: int = 30
     retry_attempts: int = 3
     retry_delay: int = 5
+    
+    # Configurações avançadas de retry
+    advanced_retry_enabled: bool = True
+    max_retry_attempts: int = 10
+    retry_base_delay: float = 1.0
+    retry_max_delay: float = 30.0
+    retry_exponential_base: float = 2.0
+    retry_jitter: bool = True
+    
+    # Circuit Breaker
+    circuit_breaker_enabled: bool = True
+    circuit_failure_threshold: int = 5
+    circuit_recovery_timeout: int = 30
+    
+    # Health Check
+    health_check_enabled: bool = True
+    health_check_interval: int = 10
+    health_check_timeout: int = 5
+    
+    # Monitoramento
+    enable_detailed_logging: bool = True
+    log_retry_attempts: bool = True
+    log_performance_metrics: bool = True
 
 @dataclass
 class AutomationConfig:

@@ -52,8 +52,8 @@ class GoogleAdsCampaignBot:
         # Inicializar componentes
         self.config = Config()
         self.logger = setup_logger()
-        self.adspower_manager = AdsPowerManager()
-        self.automation = GoogleAdsAutomation()
+        self.adspower_manager = AdsPowerManager(enable_advanced_retry=self.config.adspower.advanced_retry_enabled)
+        self.automation = GoogleAdsAutomation(enable_advanced_retry=self.config.adspower.advanced_retry_enabled)
         
         # Variáveis de estado
         self.profiles = []

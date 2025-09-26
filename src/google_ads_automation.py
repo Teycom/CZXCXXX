@@ -7,26 +7,47 @@ Responsável pela automação do navegador para criar campanhas no Google Ads
 
 import time
 import logging
+import os
 from typing import Dict, Optional, List
+from datetime import datetime
+import traceback
+import json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import Select
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-import undetected_chromedriver as uc
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+# REMOVIDO: import undetected_chromedriver as uc
+# CORREÇÃO: Não usar undetected_chromedriver que ignora debuggerAddress
+# CORREÇÃO CRÍTICA: Usar APENAS webdriver.Remote() - webdriver.Chrome() local PROIBIDO
 from selenium_stealth import stealth
 from adspower_manager import AdsPowerManager
+from retry_system import (
+    RetryManager, RetryConfig, create_webdriver_retry_manager,
+    RetryExhaustedException, CircuitOpenException, with_retry
+)
 
 class GoogleAdsAutomation:
     """Automação para criação de campanhas no Google Ads"""
     
-    def __init__(self):
+    def __init__(self, enable_advanced_retry: bool = True):
         self.logger = logging.getLogger(__name__)
         self.driver = None
         self.wait = None
-        self.adspower_manager = AdsPowerManager()
+        self.adspower_manager = AdsPowerManager(enable_advanced_retry=enable_advanced_retry)
+        self.enable_advanced_retry = enable_advanced_retry
+        
+        # Sistema de retry robusto para WebDriver e navegação
+        if self.enable_advanced_retry:
+            self.webdriver_retry_manager = create_webdriver_retry_manager(self.logger)
+            self.navigation_retry_manager = self._create_navigation_retry_manager()
+            self.logger.info("🚀 Sistema de retry avançado ATIVADO para WebDriver e navegação")
+        else:
+            self.webdriver_retry_manager = None
+            self.navigation_retry_manager = None
+            self.logger.info("⚠️ Sistema de retry avançado DESATIVADO")
         
         # Configurações padrão
         self.default_timeout = 30
@@ -122,245 +143,1039 @@ class GoogleAdsAutomation:
                 }
             }
         }
+        
+        # Log de inicialização extremamente detalhado (após definir seletores)
+        self._log_automation_initialization()
     
-    def setup_driver(self, browser_info: Dict, headless: bool = False) -> bool:
-        """🔧 Configurar driver SUPER ROBUSTO para controlar browser AdsPower com TOTAL EFICÁCIA"""
-        try:
-            self.logger.info("🔧 INICIANDO setup do driver com controle EXTREMAMENTE CALCULADO...")
-            
-            if not browser_info:
-                self.logger.error("❌ Informações do browser não fornecidas")
+    def _create_navigation_retry_manager(self) -> RetryManager:
+        """Criar RetryManager específico para operações de navegação"""
+        from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException, StaleElementReferenceException
+        
+        config = RetryConfig(
+            max_attempts=5,
+            base_delay=1.0,
+            max_delay=15.0,
+            exponential_base=1.5,
+            jitter=True,
+            timeout=45.0,
+            circuit_breaker_enabled=False,  # Não usar circuit breaker para navegação
+            retry_on_exceptions=(
+                WebDriverException,
+                TimeoutException,
+                NoSuchElementException,
+                StaleElementReferenceException,
+                ConnectionError,
+                OSError
+            )
+        )
+        
+        return RetryManager(config, self.logger)
+    
+    def setup_driver_with_retry(self, browser_info: Dict) -> bool:
+        """🔧 Configurar WebDriver APENAS com AdsPower - SEM FALLBACKS LOCAIS"""
+        self.logger.info("🚀 INICIANDO setup do WebDriver - REQUER ADSPOWER FUNCIONANDO")
+        
+        # VERIFICAÇÃO CRÍTICA: AdsPower deve estar rodando
+        if not browser_info or not isinstance(browser_info, dict):
+            error_msg = (
+                "❌ FALHA CRÍTICA: browser_info inválido!\n"
+                "🔍 VERIFICAÇÕES NECESSÁRIAS:\n"
+                "   1. AdsPower está aberto?\n"
+                "   2. Perfil foi iniciado corretamente?\n"
+                "   3. API local está habilitada?\n"
+                "💡 Este sistema REQUER AdsPower funcionando - não há fallback local!"
+            )
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if self.enable_advanced_retry and self.webdriver_retry_manager:
+            try:
+                return self.webdriver_retry_manager.execute_with_retry(
+                    self._setup_driver_internal, browser_info
+                )
+            except (RetryExhaustedException, CircuitOpenException) as e:
+                self.logger.error(f"💀 FALHA TOTAL no setup do WebDriver após retry: {str(e)}")
                 return False
+            except Exception as e:
+                self.logger.error(f"❌ ERRO INESPERADO no setup do WebDriver: {str(e)}")
+                return False
+        else:
+            # Fallback para método original
+            return self._setup_driver_internal(browser_info)
+    
+    def _setup_driver_internal(self, browser_info: Dict) -> bool:
+        """🔧 Método interno para setup do WebDriver APENAS com AdsPower - SEM FALLBACKS"""
+        # CORREÇÃO CRÍTICA: Removido fallback_chrome para garantir 100% controle AdsPower
+        strategies = [
+            ("remote_webdriver", self._setup_remote_webdriver),
+            ("direct_chrome", self._setup_direct_chrome)
+        ]
+        
+        for strategy_name, strategy_func in strategies:
+            try:
+                self.logger.info(f"🎯 Tentando estratégia: {strategy_name}")
+                
+                if strategy_func(browser_info):
+                    self.logger.info(f"✅ Sucesso com estratégia: {strategy_name}")
+                    return True
+                else:
+                    self.logger.warning(f"⚠️ Estratégia {strategy_name} retornou False")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Estratégia {strategy_name} falhou: {str(e)}")
+                # Continuar com próxima estratégia
+                continue
+        
+        # Se todas as estratégias falharam - FALHA CLARA sem fallback local
+        error_msg = (
+            "❌ FALHA CRÍTICA: Não foi possível conectar ao AdsPower!\n"
+            "🔍 VERIFICAÇÕES NECESSÁRIAS:\n"
+            "   1. AdsPower está aberto?\n"
+            "   2. API local está habilitada?\n"
+            "   3. Perfil foi iniciado corretamente?\n"
+            "   4. Porta de debug está disponível?\n"
+            "💡 Este sistema REQUER AdsPower funcionando - não há fallback local!"
+        )
+        self.logger.error(error_msg)
+        raise WebDriverException(error_msg)
+    
+    def _setup_remote_webdriver(self, browser_info: Dict) -> bool:
+        """🌐 Estratégia 1: APENAS webdriver.Remote() - SEM Chrome local"""
+        try:
+            selenium_address = browser_info.get('selenium_address')
+            if not selenium_address:
+                error_msg = "❌ FALHA: selenium_address não disponível no AdsPower!"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
             
-            # Log das informações do browser para debugging
-            self.logger.info(f"📋 Informações do browser recebidas: {browser_info}")
+            self.logger.info(f"🎯 Conectando via webdriver.Remote() EXCLUSIVAMENTE: {selenium_address}")
             
             chrome_options = Options()
-            
-            # Configurações anti-detecção PREMIUM
-            self.logger.info("🛡️ Configurando opções anti-detecção...")
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_argument('--disable-extensions-file-access-check')
-            chrome_options.add_argument('--disable-extensions-http-throttling')
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            if headless:
-                chrome_options.add_argument('--headless')
-                self.logger.info("👻 Modo headless ativado")
+            # CORREÇÃO CRÍTICA: Usar APENAS webdriver.Remote() 
+            self.driver = webdriver.Remote(
+                command_executor=selenium_address,
+                options=chrome_options
+            )
+            self.wait = WebDriverWait(self.driver, self.default_timeout)
             
-            # 🔧 CORREÇÃO REAL: Extrair debugger address CORRETAMENTE do AdsPower
-            self.logger.info("🔌 EXTRAINDO debugger address CORRETO do AdsPower...")
+            # Aplicar stealth
+            stealth(self.driver,
+                   languages=["pt-BR", "pt"],
+                   vendor="Google Inc.",
+                   platform="Win32",
+                   webgl_vendor="Intel Inc.",
+                   renderer="Intel Iris OpenGL Engine",
+                   fix_hairline=True)
             
-            debugger_address = None
+            # Teste básico
+            self.driver.get("https://www.google.com")
+            time.sleep(2)
             
-            # Método 1: Usar debugger_address se já foi processado pelo adspower_manager
-            if 'debugger_address' in browser_info:
-                debugger_address = browser_info['debugger_address']
-                self.logger.info(f"✅ Debugger address já processado: {debugger_address}")
+            self.logger.info("✅ webdriver.Remote() conectado com sucesso ao AdsPower!")
+            return True
             
-            # Método 2: Extrair de debug_port/debug_host se disponível
-            elif 'debug_port' in browser_info:
-                debug_host = browser_info.get('debug_host', '127.0.0.1')
-                debug_port = browser_info['debug_port']
-                debugger_address = f"{debug_host}:{debug_port}"
-                self.logger.info(f"✅ Debugger address construído: {debugger_address}")
+        except Exception as e:
+            error_msg = f"❌ FALHA CRÍTICA: webdriver.Remote() não conseguiu conectar ao AdsPower: {str(e)}"
+            self.logger.error(error_msg)
+            raise ConnectionError(error_msg)
+    
+    def _setup_direct_chrome(self, browser_info: Dict) -> bool:
+        """🔧 Estratégia 2: APENAS webdriver.Remote() com debug port - SEM Chrome local"""
+        try:
+            debug_port = browser_info.get('debug_port')
+            if not debug_port:
+                error_msg = "❌ FALHA: debug_port não disponível no AdsPower!"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
             
-            # Método 3: Extrair diretamente da URL WebSocket se disponível
-            elif 'ws' in browser_info and isinstance(browser_info['ws'], str):
-                ws_url = browser_info['ws']
-                self.logger.info(f"🔍 Extraindo porta da WebSocket URL: {ws_url}")
-                
-                import re
-                match = re.search(r'ws://([^:/]+):(\d+)', ws_url)
-                if match:
-                    host = match.group(1)
-                    port = match.group(2)
-                    debugger_address = f"{host}:{port}"
-                    self.logger.info(f"✅ Debugger address extraído da ws: {debugger_address}")
-                else:
-                    self.logger.warning(f"⚠️ Não foi possível extrair porta da URL: {ws_url}")
+            # Construir URL do Remote WebDriver
+            remote_url = f"http://localhost:{debug_port}/webdriver"
+            self.logger.info(f"🎯 Conectando via webdriver.Remote() com debug port: {remote_url}")
             
-            # Fallback para portas comuns se tudo falhar
-            if not debugger_address:
-                self.logger.warning("⚠️ Usando fallback para portas comuns do Chrome...")
-                common_ports = [9222, 9223, 9224, 9225]
-                
-                for port in common_ports:
-                    try:
-                        test_url = f"http://127.0.0.1:{port}/json"
-                        import requests
-                        response = requests.get(test_url, timeout=2)
-                        if response.status_code == 200:
-                            debugger_address = f"127.0.0.1:{port}"
-                            self.logger.info(f"✅ Porta funcional encontrada: {debugger_address}")
-                            break
-                    except:
-                        continue
+            chrome_options = Options()
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            if not debugger_address:
-                self.logger.error("💥 ERRO CRÍTICO: Não foi possível determinar debugger address!")
-                self.logger.error(f"📋 Dados disponíveis: {browser_info}")
+            # CORREÇÃO CRÍTICA: Usar APENAS webdriver.Remote() 
+            self.driver = webdriver.Remote(
+                command_executor=remote_url,
+                options=chrome_options
+            )
+            self.wait = WebDriverWait(self.driver, self.default_timeout)
+            
+            # Teste básico
+            self.driver.get("https://www.google.com")
+            time.sleep(2)
+            
+            self.logger.info("✅ webdriver.Remote() com debug port conectado com sucesso ao AdsPower!")
+            return True
+            
+        except Exception as e:
+            error_msg = f"❌ FALHA CRÍTICA: webdriver.Remote() com debug port não conseguiu conectar ao AdsPower: {str(e)}"
+            self.logger.error(error_msg)
+            raise ConnectionError(error_msg)
+    
+    # MÉTODO REMOVIDO: _setup_fallback_chrome
+    # CORREÇÃO CRÍTICA: Eliminado fallback que criava Chrome local
+    # Sistema agora requer 100% AdsPower ou falha claramente
+    
+    def safe_navigate(self, url: str) -> bool:
+        """🧭 Navegação segura com retry robusto"""
+        if self.enable_advanced_retry and self.navigation_retry_manager:
+            try:
+                return self.navigation_retry_manager.execute_with_retry(self._navigate_internal, url)
+            except (RetryExhaustedException, CircuitOpenException) as e:
+                self.logger.error(f"💀 FALHA TOTAL na navegação após retry: {str(e)}")
                 return False
-            
-            self.logger.info(f"🎯 Configurando debuggerAddress: {debugger_address}")
-            chrome_options.add_experimental_option("debuggerAddress", debugger_address)
-            
-            # 🔧 CORREÇÃO REAL: Sistema inteligente de múltiplas versões e browsers
-            browser_type = browser_info.get('browser_type', 'chrome').lower()
-            self.logger.info(f"🌐 Tipo de browser detectado: {browser_type}")
-            
-            if browser_type == 'firefox':
-                driver_created = self._setup_firefox_driver(browser_info, chrome_options)
-            else:
-                driver_created = self._setup_chrome_driver_smart(browser_info, chrome_options)
-            
-            # Sistema inteligente implementado acima
-            
-            if not driver_created or not self.driver:
-                self.logger.error("💥 FALHA TOTAL: Sistema inteligente não conseguiu configurar WebDriver!")
-                self.logger.error("🔧 PROBLEMA: Múltiplas tentativas falharam (Chrome + Firefox)")
+        else:
+            return self._navigate_internal(url)
+    
+    def _navigate_internal(self, url: str) -> bool:
+        """🧭 Método interno de navegação"""
+        if not self.driver:
+            raise WebDriverException("Driver não inicializado")
+        
+        self.logger.info(f"🧭 Navegando para: {url}")
+        self.driver.get(url)
+        
+        # Aguardar carregamento
+        self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        time.sleep(2)
+        
+        self.logger.info("✅ Navegação concluída com sucesso")
+        return True
+    
+    def safe_find_element(self, selector: str, timeout: int = None) -> Optional[object]:
+        """🔍 Busca segura de elemento com retry robusto"""
+        if timeout is None:
+            timeout = self.default_timeout
+        
+        if self.enable_advanced_retry and self.navigation_retry_manager:
+            try:
+                return self.navigation_retry_manager.execute_with_retry(
+                    self._find_element_internal, selector, timeout
+                )
+            except (RetryExhaustedException, CircuitOpenException) as e:
+                self.logger.error(f"💀 FALHA TOTAL na busca de elemento após retry: {str(e)}")
+                return None
+        else:
+            return self._find_element_internal(selector, timeout)
+    
+    def _find_element_internal(self, selector: str, timeout: int):
+        """🔍 Método interno de busca de elemento"""
+        if not self.driver:
+            raise WebDriverException("Driver não inicializado")
+        
+        wait = WebDriverWait(self.driver, timeout)
+        
+        # Tentar diferentes estratégias de busca
+        strategies = [
+            (By.XPATH, selector),
+            (By.CSS_SELECTOR, selector),
+            (By.ID, selector),
+            (By.CLASS_NAME, selector)
+        ]
+        
+        for by_method, value in strategies:
+            try:
+                element = wait.until(EC.presence_of_element_located((by_method, value)))
+                self.logger.debug(f"✅ Elemento encontrado com {by_method.upper()}: {value}")
+                return element
+            except TimeoutException:
+                continue
+        
+        raise NoSuchElementException(f"Elemento não encontrado: {selector}")
+    
+    def safe_click(self, element_or_selector, timeout: int = None) -> bool:
+        """👆 Click seguro com retry robusto"""
+        if self.enable_advanced_retry and self.navigation_retry_manager:
+            try:
+                return self.navigation_retry_manager.execute_with_retry(
+                    self._click_internal, element_or_selector, timeout
+                )
+            except (RetryExhaustedException, CircuitOpenException) as e:
+                self.logger.error(f"💀 FALHA TOTAL no click após retry: {str(e)}")
                 return False
-            
-            # 🔧 CORREÇÃO 3: WebDriverWait com verificação OBRIGATÓRIA
-            try:
-                self.wait = WebDriverWait(self.driver, self.default_timeout)
-                self.logger.info(f"⏱️ WebDriverWait configurado: timeout {self.default_timeout}s")
-            except Exception as wait_error:
-                self.logger.error(f"💥 ERRO ao configurar WebDriverWait: {str(wait_error)}")
-                return False
-            
-            # BATERIA DE TESTES CRÍTICOS: Verificar controle TOTAL do browser
-            self.logger.info("🧪 BATERIA DE TESTES CRÍTICOS: Verificando controle COMPLETO...")
-            
-            test_results = []
-            
-            # Verificação adicional de segurança
-            if not self.driver:
-                self.logger.error("💥 ERRO CRÍTICO: Driver está None após conexão supostamente bem-sucedida")
-                return False
-            
-            try:
-                # TESTE 1: Obter URL atual
-                current_url = self.driver.current_url
-                test_results.append(("URL atual", "SUCESSO", current_url))
-                self.logger.info(f"✅ TESTE 1 SUCESSO: URL atual obtida: {current_url}")
-            except Exception as url_error:
-                test_results.append(("URL atual", "FALHA", str(url_error)))
-                self.logger.error(f"❌ TESTE 1 FALHA: {str(url_error)}")
-            
-            try:
-                # TESTE 2: Obter título
-                title = self.driver.title or "Sem título" if self.driver else "Driver None"
-                test_results.append(("Título", "SUCESSO", title))
-                self.logger.info(f"✅ TESTE 2 SUCESSO: Título obtido: {title}")
-            except Exception as title_error:
-                test_results.append(("Título", "FALHA", str(title_error)))
-                self.logger.error(f"❌ TESTE 2 FALHA: {str(title_error)}")
-            
-            try:
-                # TESTE 3: Obter abas
-                windows = self.driver.window_handles if self.driver else []
-                test_results.append(("Abas", "SUCESSO", f"{len(windows)} abas"))
-                self.logger.info(f"✅ TESTE 3 SUCESSO: {len(windows)} aba(s) detectada(s)")
-            except Exception as windows_error:
-                test_results.append(("Abas", "FALHA", str(windows_error)))
-                self.logger.error(f"❌ TESTE 3 FALHA: {str(windows_error)}")
-            
-            try:
-                # TESTE 4: JavaScript básico
-                if self.driver:
-                    js_result = self.driver.execute_script("return 'CONTROLE_OK';")
-                    if js_result == 'CONTROLE_OK':
-                        test_results.append(("JavaScript", "SUCESSO", "Controle confirmado"))
-                        self.logger.info("✅ TESTE 4 SUCESSO: JavaScript executado com sucesso")
-                    else:
-                        test_results.append(("JavaScript", "PARCIAL", f"Resultado: {js_result}"))
-                        self.logger.warning(f"⚠️ TESTE 4 PARCIAL: Resultado inesperado: {js_result}")
-                else:
-                    test_results.append(("JavaScript", "FALHA", "Driver é None"))
-            except Exception as js_error:
-                test_results.append(("JavaScript", "FALHA", str(js_error)))
-                self.logger.error(f"❌ TESTE 4 FALHA: {str(js_error)}")
-            
-            try:
-                # TESTE 5: Navegação básica (teste crucial)
-                if self.driver:
-                    self.logger.info("🧪 TESTE 5 CRÍTICO: Tentando navegação básica...")
-                    original_url = self.driver.current_url
-                    self.driver.execute_script("window.history.replaceState({}, '', window.location.href);")
-                    test_results.append(("Navegação básica", "SUCESSO", "Comando aceito"))
-                    self.logger.info("✅ TESTE 5 SUCESSO: Navegação básica funcional")
-                else:
-                    test_results.append(("Navegação básica", "FALHA", "Driver é None"))
-            except Exception as nav_error:
-                test_results.append(("Navegação básica", "FALHA", str(nav_error)))
-                self.logger.error(f"❌ TESTE 5 FALHA: {str(nav_error)}")
-            
-            # ANÁLISE DOS RESULTADOS DOS TESTES
-            self.logger.info("📊 ANÁLISE DOS RESULTADOS DOS TESTES:")
-            successful_tests = 0
-            total_tests = len(test_results)
-            
-            for test_name, result, details in test_results:
-                if result == "SUCESSO":
-                    successful_tests += 1
-                    self.logger.info(f"   ✅ {test_name}: {details}")
-                elif result == "PARCIAL":
-                    successful_tests += 0.5
-                    self.logger.warning(f"   ⚠️ {test_name}: {details}")
-                else:
-                    self.logger.error(f"   ❌ {test_name}: {details}")
-            
-            success_rate = (successful_tests / total_tests) * 100
-            self.logger.info(f"📈 TAXA DE SUCESSO: {success_rate:.1f}% ({successful_tests}/{total_tests})")
-            
-            if success_rate < 60:
-                self.logger.error("💥 CONTROLE INSUFICIENTE: Muitos testes falharam")
-                return False
-            elif success_rate < 100:
-                self.logger.warning("⚠️ CONTROLE PARCIAL: Alguns problemas detectados, mas continuando...")
-            else:
-                self.logger.info("🎉 CONTROLE TOTAL CONFIRMADO: Todos os testes passaram!")
-            
-            # Maximizar janela com verificação
-            try:
-                if self.driver:
-                    self.logger.info("📺 Maximizando janela do browser...")
-                    self.driver.maximize_window()
-                    time.sleep(1)  # Aguardar maximização
-                    self.logger.info("✅ Janela maximizada com sucesso")
-                else:
-                    self.logger.warning("⚠️ Não é possível maximizar - driver é None")
-            except Exception as max_error:
-                self.logger.warning(f"⚠️ Não foi possível maximizar janela: {str(max_error)}")
-            
-            # VALIDAÇÃO FINAL: Garantir que driver realmente funciona
-            try:
-                # Teste crítico final
-                current_url = self.driver.current_url
-                self.logger.info(f"✅ VALIDAÇÃO FINAL: Driver funcional - URL: {current_url}")
-                self.logger.info("🎉 Driver configurado com SUCESSO VALIDADO!")
-                return True
-                
-            except Exception as validation_error:
-                self.logger.error(f"💥 VALIDAÇÃO FINAL FALHOU: {str(validation_error)}")
-                self.logger.error("🔧 Driver foi criado mas não consegue controlar o browser!")
-                
-                # Limpar driver inválido
-                try:
-                    self.driver.quit()
-                except:
-                    pass
+        else:
+            return self._click_internal(element_or_selector, timeout)
+    
+    def _click_internal(self, element_or_selector, timeout: int = None) -> bool:
+        """👆 Método interno de click"""
+        if timeout is None:
+            timeout = self.default_timeout
+        
+        # Se é um seletor string, encontrar o elemento primeiro
+        if isinstance(element_or_selector, str):
+            element = self._find_element_internal(element_or_selector, timeout)
+        else:
+            element = element_or_selector
+        
+        if not element:
+            raise NoSuchElementException("Elemento para click não encontrado")
+        
+        # Aguardar elemento ser clicável
+        wait = WebDriverWait(self.driver, timeout)
+        clickable_element = wait.until(EC.element_to_be_clickable(element))
+        
+        # Scroll para o elemento se necessário
+        self.driver.execute_script("arguments[0].scrollIntoView(true);", clickable_element)
+        time.sleep(0.5)
+        
+        # Tentar click
+        clickable_element.click()
+        time.sleep(1)
+        
+        self.logger.debug("✅ Click executado com sucesso")
+        return True
+    
+    def cleanup(self):
+        """🧹 Limpeza de recursos"""
+        try:
+            if self.driver:
+                self.driver.quit()
                 self.driver = None
                 self.wait = None
+                self.logger.info("🧹 WebDriver encerrado")
+            
+            if self.adspower_manager:
+                self.adspower_manager.cleanup()
+            
+            if self.enable_advanced_retry:
+                if self.webdriver_retry_manager:
+                    self.webdriver_retry_manager.cleanup()
+                if self.navigation_retry_manager:
+                    self.navigation_retry_manager.cleanup()
+                self.logger.info("🧹 Recursos de retry limpos")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro na limpeza: {str(e)}")
+    
+    def _log_automation_initialization(self) -> None:
+        """🔍 LOG DETALHADO de inicialização do GoogleAdsAutomation"""
+        timestamp = datetime.now().isoformat()
+        self.logger.info("="*80)
+        self.logger.info(f"🚀 INICIALIZANDO GoogleAdsAutomation - {timestamp}")
+        self.logger.info(f"📋 Logger configurado: {self.logger.name}")
+        self.logger.info(f"⏱️ Timeout padrão: {self.default_timeout}s")
+        self.logger.info(f"⏳ Delay padrão: {self.default_delay}s")
+        self.logger.info(f"🔄 Max retries: {self.max_retries}")
+        self.logger.info(f"⏲️ Retry delay: {self.retry_delay}s")
+        self.logger.info(f"🌐 Idioma atual: {self.current_language}")
+        self.logger.info(f"🎛️ AdsPowerManager inicializado: {type(self.adspower_manager).__name__}")
+        self.logger.info(f"🖥️ WebDriver: {self.driver} (None no início)")
+        self.logger.info(f"⏰ WebDriverWait: {self.wait} (None no início)")
+        self.logger.info(f"📊 Total de seletores multilíngues carregados: {len(self.multilingual_selectors)}")
+        
+        # Log dos seletores principais
+        for key, selectors in list(self.multilingual_selectors.items())[:3]:  # Primeiros 3 para não sobrecarregar
+            self.logger.info(f"   📋 Seletor '{key}': {len(selectors)} idiomas configurados")
+        
+        self.logger.info("="*80)
+    
+    def _log_step_start(self, step_name: str, step_number: int = None, details: Dict = None) -> str:
+        """🚀 LOG PADRONIZADO de início de etapa com timestamp"""
+        timestamp = datetime.now().isoformat()
+        step_id = f"STEP_{step_number}" if step_number else "STEP"
+        
+        self.logger.info("="*60)
+        self.logger.info(f"🚀 [{step_id}] INICIANDO: {step_name} - {timestamp}")
+        
+        if details:
+            self.logger.info(f"📋 Detalhes da etapa:")
+            for key, value in details.items():
+                self.logger.info(f"   📌 {key}: {value}")
+        
+        return timestamp
+    
+    def _log_step_success(self, step_name: str, start_timestamp: str, details: Dict = None) -> None:
+        """✅ LOG PADRONIZADO de sucesso de etapa"""
+        end_timestamp = datetime.now().isoformat()
+        start_time = datetime.fromisoformat(start_timestamp)
+        end_time = datetime.fromisoformat(end_timestamp)
+        duration = (end_time - start_time).total_seconds()
+        
+        self.logger.info(f"✅ SUCESSO: {step_name}")
+        self.logger.info(f"⏱️ Duração: {duration:.3f}s")
+        
+        if details:
+            self.logger.info(f"📋 Resultados:")
+            for key, value in details.items():
+                self.logger.info(f"   ✅ {key}: {value}")
+        
+        self.logger.info("="*60)
+    
+    def _log_step_failure(self, step_name: str, start_timestamp: str, error: Exception, details: Dict = None) -> None:
+        """❌ LOG PADRONIZADO de falha de etapa"""
+        end_timestamp = datetime.now().isoformat()
+        start_time = datetime.fromisoformat(start_timestamp)
+        end_time = datetime.fromisoformat(end_timestamp)
+        duration = (end_time - start_time).total_seconds()
+        
+        self.logger.error(f"❌ FALHA: {step_name}")
+        self.logger.error(f"⏱️ Duração até falha: {duration:.3f}s")
+        self.logger.error(f"💥 Tipo do erro: {type(error).__name__}")
+        self.logger.error(f"📝 Mensagem: {str(error)}")
+        
+        if details:
+            self.logger.error(f"📋 Contexto da falha:")
+            for key, value in details.items():
+                self.logger.error(f"   ❌ {key}: {value}")
+        
+        self.logger.error(f"📚 Traceback completo:")
+        self.logger.error(traceback.format_exc())
+        self.logger.error("="*60)
+    
+    def _log_webdriver_state(self, context: str) -> Dict:
+        """🔍 LOG DETALHADO do estado atual do WebDriver"""
+        state = {
+            'context': context,
+            'timestamp': datetime.now().isoformat(),
+            'driver_available': self.driver is not None,
+            'wait_available': self.wait is not None
+        }
+        
+        self.logger.info(f"🔍 ESTADO DO WEBDRIVER ({context}):")
+        self.logger.info(f"   📅 Timestamp: {state['timestamp']}")
+        self.logger.info(f"   🚗 Driver disponível: {state['driver_available']}")
+        self.logger.info(f"   ⏰ Wait disponível: {state['wait_available']}")
+        
+        if self.driver:
+            try:
+                # Coletar informações detalhadas do driver
+                current_url = self.driver.current_url
+                title = self.driver.title or "[Sem título]"
+                window_handles = self.driver.window_handles
+                window_size = self.driver.get_window_size()
+                
+                state.update({
+                    'current_url': current_url,
+                    'page_title': title,
+                    'total_windows': len(window_handles),
+                    'current_window': self.driver.current_window_handle,
+                    'window_size': window_size
+                })
+                
+                self.logger.info(f"   🌐 URL atual: {current_url}")
+                self.logger.info(f"   📄 Título: {title}")
+                self.logger.info(f"   🪟 Total de janelas: {len(window_handles)}")
+                self.logger.info(f"   📐 Tamanho da janela: {window_size}")
+                
+                # Teste de funcionalidade JavaScript
+                try:
+                    js_test = self.driver.execute_script("return {ready: document.readyState, url: window.location.href, title: document.title};")
+                    state['javascript_test'] = js_test
+                    self.logger.info(f"   🧪 Teste JavaScript: {js_test}")
+                except Exception as js_error:
+                    state['javascript_error'] = str(js_error)
+                    self.logger.warning(f"   ⚠️ Erro no teste JavaScript: {str(js_error)}")
+                
+            except Exception as driver_error:
+                state['driver_error'] = str(driver_error)
+                self.logger.error(f"   ❌ Erro ao acessar driver: {str(driver_error)}")
+        
+        return state
+    
+    def setup_driver(self, browser_info: Dict, headless: bool = False) -> bool:
+        """🔧 CONFIGURAR DRIVER com logging EXTREMAMENTE detalhado para conexão WebDriver"""
+        step_start = self._log_step_start("Setup WebDriver Driver", 1, {
+            'headless_mode': headless,
+            'browser_info_provided': browser_info is not None,
+            'browser_info_keys': list(browser_info.keys()) if browser_info else None
+        })
+        
+        try:
+            # Estado inicial detalhado
+            initial_state = self._log_webdriver_state("Before setup_driver")
+            
+            # VALIDAÇÃO CRÍTICA: Verificar informações do browser
+            if not browser_info:
+                self._log_step_failure("Setup WebDriver Driver", step_start, 
+                                     ValueError("Informações do browser não fornecidas"), {
+                    'browser_info': browser_info,
+                    'expected_fields': ['debug_port', 'selenium_address', 'webdriver', 'ws']
+                })
+                return False
+            
+            self.logger.info(f"📋 ANÁLISE DETALHADA dos dados do AdsPower:")
+            self.logger.info(f"   📊 Total de campos: {len(browser_info)}")
+            for key, value in browser_info.items():
+                self.logger.info(f"   📌 {key}: {value} (tipo: {type(value).__name__})")
+            
+            # PROCESSO CRÍTICO: Conectar ao AdsPower com retry
+            connection_success = self._connect_to_adspower_with_retry(browser_info, max_retries=5)
+            
+            if connection_success:
+                # Validação final detalhada
+                final_state = self._log_webdriver_state("After successful setup_driver")
+                
+                self._log_step_success("Setup WebDriver Driver", step_start, {
+                    'connection_method': 'AdsPower Remote',
+                    'driver_type': type(self.driver).__name__ if self.driver else 'None',
+                    'wait_configured': self.wait is not None,
+                    'final_url': self.driver.current_url if self.driver else 'N/A'
+                })
+                return True
+            else:
+                self._log_step_failure("Setup WebDriver Driver", step_start,
+                                     ConnectionError("Falha na conexão com AdsPower"), {
+                    'retry_attempts': 5,
+                    'browser_info_summary': {k: str(v)[:100] for k, v in browser_info.items()}
+                })
                 return False
             
         except Exception as e:
-            self.logger.error(f"💥 ERRO CRÍTICO ao configurar driver: {str(e)}")
-            self.logger.error(f"📍 Detalhes do erro: {type(e).__name__}")
+            self._log_step_failure("Setup WebDriver Driver", step_start, e, {
+                'browser_info_keys': list(browser_info.keys()) if browser_info else None,
+                'driver_state': self.driver is not None,
+                'headless_requested': headless
+            })
+            return False
+    
+    def _connect_to_adspower_with_retry(self, browser_info: Dict, max_retries: int = 5) -> bool:
+        """🔄 SISTEMA ROBUSTO DE RETRY com logging EXTREMAMENTE detalhado para cada tentativa"""
+        
+        step_start = self._log_step_start("Connect to AdsPower with Retry", 2, {
+            'max_retries': max_retries,
+            'available_methods': ['selenium_address', 'debug_port', 'chrome_service'],
+            'browser_info_fields': list(browser_info.keys())
+        })
+        
+        connection_attempts = []
+        
+        for attempt in range(max_retries):
+            attempt_start = datetime.now().isoformat()
+            self.logger.info(f"🔄 ===== TENTATIVA {attempt + 1}/{max_retries} =====")
+            
+            try:
+                attempt_details = {
+                    'attempt_number': attempt + 1,
+                    'attempt_start': attempt_start,
+                    'methods_tried': []
+                }
+                
+                # MÉTODO 1: webdriver.Remote() com selenium_address (PRIORIDADE MÁXIMA)
+                if 'selenium_address' in browser_info:
+                    method_start = datetime.now().isoformat()
+                    self.logger.info(f"🎯 MÉTODO 1: Tentando webdriver.Remote() com selenium_address...")
+                    
+                    method_success = self._try_webdriver_remote_selenium(browser_info)
+                    method_duration = (datetime.now() - datetime.fromisoformat(method_start)).total_seconds()
+                    
+                    attempt_details['methods_tried'].append({
+                        'method': 'webdriver_remote_selenium',
+                        'success': method_success,
+                        'duration': method_duration,
+                        'selenium_address': browser_info.get('selenium_address')
+                    })
+                    
+                    if method_success:
+                        self.logger.info(f"✅ MÉTODO 1 SUCESSO - Executando validação robusta...")
+                        validation_result = self._execute_comprehensive_validation()
+                        if validation_result['all_validations_passed']:
+                            self._log_step_success("Connect to AdsPower with Retry", step_start, {
+                                'successful_method': 'webdriver_remote_selenium',
+                                'attempt_number': attempt + 1,
+                                'total_attempts': len(connection_attempts) + 1,
+                                'validation_score': validation_result['total_score']
+                            })
+                            return True
+                        else:
+                            self.logger.warning(f"⚠️ MÉTODO 1 - Conexão falhou na validação robusta")
+                            self._log_validation_failure(validation_result, 'webdriver_remote_selenium')
+                
+                # MÉTODO 2: webdriver.Remote() com porta debug
+                debug_address = self._extract_debug_address(browser_info)
+                if debug_address:
+                    method_start = datetime.now().isoformat()
+                    self.logger.info(f"🎯 MÉTODO 2: Tentando webdriver.Remote() com debug port...")
+                    
+                    method_success = self._try_webdriver_remote_debug(debug_address, browser_info)
+                    method_duration = (datetime.now() - datetime.fromisoformat(method_start)).total_seconds()
+                    
+                    attempt_details['methods_tried'].append({
+                        'method': 'webdriver_remote_debug',
+                        'success': method_success,
+                        'duration': method_duration,
+                        'debug_address': debug_address
+                    })
+                    
+                    if method_success:
+                        self.logger.info(f"✅ MÉTODO 2 SUCESSO - Executando validação robusta...")
+                        validation_result = self._execute_comprehensive_validation()
+                        if validation_result['all_validations_passed']:
+                            self._log_step_success("Connect to AdsPower with Retry", step_start, {
+                                'successful_method': 'webdriver_remote_debug',
+                                'attempt_number': attempt + 1,
+                                'debug_address': debug_address,
+                                'validation_score': validation_result['total_score']
+                            })
+                            return True
+                        else:
+                            self.logger.warning(f"⚠️ MÉTODO 2 - Conexão falhou na validação robusta")
+                            self._log_validation_failure(validation_result, 'webdriver_remote_debug')
+                
+                # MÉTODO 3 REMOVIDO: Chrome Service com debuggerAddress (CRIAVA CHROME LOCAL)
+                # CORREÇÃO CRÍTICA: Eliminado método que usava webdriver.Chrome() local
+                self.logger.error("🚫 MÉTODO 3 REMOVIDO: Chrome Service criaria Chrome local - PROIBIDO!")
+                self.logger.error("💡 Sistema requer 100% webdriver.Remote() com AdsPower funcionando")
+                
+                # Se chegou aqui, tentativa falhou
+                attempt_end = datetime.now().isoformat()
+                attempt_duration = (datetime.fromisoformat(attempt_end) - datetime.fromisoformat(attempt_start)).total_seconds()
+                
+                attempt_details.update({
+                    'attempt_end': attempt_end,
+                    'attempt_duration': attempt_duration,
+                    'success': False
+                })
+                
+                connection_attempts.append(attempt_details)
+                
+                self.logger.warning(f"⚠️ TENTATIVA {attempt + 1} FALHOU - Todos os métodos falharam")
+                self.logger.warning(f"📊 Métodos tentados: {len(attempt_details['methods_tried'])}")
+                
+                if attempt < max_retries - 1:
+                    delay = 2 * (attempt + 1)
+                    self.logger.warning(f"⏳ Aguardando {delay}s antes da próxima tentativa...")
+                    time.sleep(delay)
+                    
+            except Exception as e:
+                attempt_end = datetime.now().isoformat()
+                attempt_duration = (datetime.fromisoformat(attempt_end) - datetime.fromisoformat(attempt_start)).total_seconds()
+                
+                attempt_details.update({
+                    'attempt_end': attempt_end,
+                    'attempt_duration': attempt_duration,
+                    'success': False,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                })
+                
+                connection_attempts.append(attempt_details)
+                
+                self.logger.error(f"❌ ERRO CRÍTICO na tentativa {attempt + 1}:")
+                self.logger.error(f"   💥 Tipo: {type(e).__name__}")
+                self.logger.error(f"   📝 Mensagem: {str(e)}")
+                
+                if attempt < max_retries - 1:
+                    delay = 2 * (attempt + 1)
+                    self.logger.error(f"⏳ Aguardando {delay}s antes da próxima tentativa...")
+                    time.sleep(delay)
+        
+        # RESUMO FINAL DAS TENTATIVAS
+        self.logger.error("💥 RESUMO FINAL - TODAS AS TENTATIVAS FALHARAM:")
+        for i, attempt in enumerate(connection_attempts):
+            self.logger.error(f"   📋 Tentativa {i+1}: {len(attempt.get('methods_tried', []))} métodos, duração: {attempt.get('attempt_duration', 0):.3f}s")
+        
+        self._log_step_failure("Connect to AdsPower with Retry", step_start,
+                             ConnectionError("Todas as tentativas de conexão falharam"), {
+            'total_attempts': len(connection_attempts),
+            'methods_available': ['selenium_address' in browser_info, debug_address is not None],
+            'final_debug_address': debug_address
+        })
+        
+        return False
+    
+    def _extract_debug_address(self, browser_info: Dict) -> Optional[str]:
+        """🔍 EXTRAIR endereço de debug do AdsPower de forma ROBUSTA"""
+        
+        # Método 1: debugger_address já processado
+        if 'debugger_address' in browser_info:
+            address = browser_info['debugger_address']
+            self.logger.info(f"✅ Debug address pré-processado: {address}")
+            return address
+        
+        # Método 2: construir de debug_port + debug_host
+        if 'debug_port' in browser_info:
+            host = browser_info.get('debug_host', '127.0.0.1')
+            port = browser_info['debug_port']
+            address = f"{host}:{port}"
+            self.logger.info(f"✅ Debug address construído: {address}")
+            return address
+        
+        # Método 3: extrair de WebSocket URL
+        if 'ws' in browser_info and isinstance(browser_info['ws'], str):
+            ws_url = browser_info['ws']
+            import re
+            match = re.search(r'ws://([^:/]+):(\d+)', ws_url)
+            if match:
+                host, port = match.groups()
+                address = f"{host}:{port}"
+                self.logger.info(f"✅ Debug address extraído da WebSocket: {address}")
+                return address
+        
+        # Método 4: testar portas comuns
+        self.logger.warning("⚠️ Testando portas comuns do Chrome...")
+        import requests
+        for port in [9222, 9223, 9224, 9225]:
+            try:
+                response = requests.get(f"http://127.0.0.1:{port}/json", timeout=2)
+                if response.status_code == 200:
+                    address = f"127.0.0.1:{port}"
+                    self.logger.info(f"✅ Porta funcional encontrada: {address}")
+                    return address
+            except:
+                continue
+        
+        self.logger.error("💥 FALHA: Não foi possível determinar debug address!")
+        return None
+    
+    def _try_webdriver_remote_selenium(self, browser_info: Dict) -> bool:
+        """🎯 MÉTODO 1: webdriver.Remote() com selenium_address do AdsPower"""
+        try:
+            selenium_address = browser_info['selenium_address']
+            self.logger.info(f"🎯 Conectando via webdriver.Remote() ao: {selenium_address}")
+            
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            
+            # Opções para Chrome (compatível com Selenium 4)
+            options = Options()
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            # Conectar ao AdsPower via Remote WebDriver
+            self.driver = webdriver.Remote(
+                command_executor=selenium_address,
+                options=options
+            )
+            
+            self.logger.info("✅ SUCESSO: webdriver.Remote() conectado ao AdsPower!")
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ webdriver.Remote() selenium falhou: {str(e)}")
+            return False
+    
+    def _try_webdriver_remote_debug(self, debug_address: str, browser_info: Dict) -> bool:
+        """🎯 MÉTODO 2: webdriver.Remote() com porta de debug"""
+        try:
+            # Construir URL do Remote WebDriver com porta debug
+            remote_url = f"http://{debug_address}/webdriver"
+            self.logger.info(f"🎯 Tentando webdriver.Remote() via debug: {remote_url}")
+            
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            
+            # Opções para Chrome (compatível com Selenium 4)
+            options = Options()
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            self.driver = webdriver.Remote(
+                command_executor=remote_url,
+                options=options
+            )
+            
+            self.logger.info("✅ SUCESSO: webdriver.Remote() via debug conectado!")
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ webdriver.Remote() debug falhou: {str(e)}")
+            return False
+    
+    # MÉTODO REMOVIDO: _try_chrome_service_debug
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Chrome() local
+    # Sistema agora exige 100% webdriver.Remote() com AdsPower ou falha claramente
+    
+    def _execute_comprehensive_validation(self) -> Dict:
+        """🎯 ORQUESTRADOR DE VALIDAÇÃO ROBUSTA - Executa todas as validações em sequência
+        
+        Esta função coordena a execução de todas as validações robustas implementadas
+        e gera um relatório consolidado com sistema de alertas claros.
+        
+        Returns:
+            Dict: Relatório consolidado de todas as validações
+        """
+        step_start = self._log_step_start("Validação Robusta Consolidada", 100, {
+            'validacoes_a_executar': ['validate_adspower_session', 'verify_session_active', 'test_browser_navigation'],
+            'objetivo': 'Garantir controle absoluto do navegador AdsPower'
+        })
+        
+        consolidated_report = {
+            'all_validations_passed': False,
+            'timestamp': datetime.now().isoformat(),
+            'total_score': 0,
+            'validations': {},
+            'critical_issues': [],
+            'warnings': [],
+            'recommendations': [],
+            'summary': ''
+        }
+        
+        try:
+            # Configurar WebDriverWait se ainda não existe
+            if not self.wait and self.driver:
+                self.wait = WebDriverWait(self.driver, self.default_timeout)
+                self.logger.info(f"⏱️ WebDriverWait configurado: timeout {self.default_timeout}s")
+            
+            # VALIDAÇÃO 1: Sessão AdsPower (Teste completo de controle)
+            self.logger.info("🎯 ===== EXECUTANDO VALIDAÇÃO 1: SESSÃO ADSPOWER =====")
+            session_validation = self.validate_adspower_session()
+            consolidated_report['validations']['session_validation'] = session_validation
+            
+            if session_validation['session_valid']:
+                self.logger.info("✅ VALIDAÇÃO 1 APROVADA: Controle do navegador confirmado")
+                consolidated_report['total_score'] += session_validation['overall_score']
+            else:
+                self.logger.error("❌ VALIDAÇÃO 1 REPROVADA: Problemas no controle do navegador")
+                consolidated_report['critical_issues'].extend(session_validation['critical_failures'])
+                consolidated_report['warnings'].extend(session_validation['warnings'])
+            
+            # VALIDAÇÃO 2: Verificação de Sessão Ativa (Responsividade)
+            self.logger.info("🎯 ===== EXECUTANDO VALIDAÇÃO 2: SESSÃO ATIVA =====")
+            active_validation = self.verify_session_active()
+            consolidated_report['validations']['active_validation'] = active_validation
+            
+            if active_validation['session_active'] and active_validation['session_responsive']:
+                self.logger.info("✅ VALIDAÇÃO 2 APROVADA: Sessão ativa e responsiva")
+                consolidated_report['total_score'] += 30  # Pontos por responsividade
+            else:
+                self.logger.error("❌ VALIDAÇÃO 2 REPROVADA: Sessão inativa ou lenta")
+                if not active_validation['session_active']:
+                    consolidated_report['critical_issues'].append("Sessão WebDriver não está ativa")
+                if not active_validation['session_responsive']:
+                    consolidated_report['critical_issues'].append("Sessão WebDriver não está responsiva")
+                consolidated_report['recommendations'].extend(active_validation['recommendations'])
+            
+            # VALIDAÇÃO 3: Teste Crítico de Navegação (Google.com)
+            self.logger.info("🎯 ===== EXECUTANDO VALIDAÇÃO 3: TESTE DE NAVEGAÇÃO =====")
+            navigation_validation = self.test_browser_navigation()
+            consolidated_report['validations']['navigation_validation'] = navigation_validation
+            
+            if navigation_validation['navigation_successful']:
+                self.logger.info("✅ VALIDAÇÃO 3 APROVADA: Navegação para Google.com bem-sucedida")
+                consolidated_report['total_score'] += 20  # Pontos por navegação
+            else:
+                self.logger.error("❌ VALIDAÇÃO 3 REPROVADA: Falha na navegação para Google.com")
+                consolidated_report['critical_issues'].append("Incapaz de navegar para sites externos")
+                consolidated_report['warnings'].extend(navigation_validation['warnings'])
+                for error in navigation_validation['errors']:
+                    consolidated_report['critical_issues'].append(f"Navegação: {error}")
+            
+            # ANÁLISE FINAL CONSOLIDADA
+            max_possible_score = 120  # 70 (sessão) + 30 (ativo) + 20 (navegação)
+            score_percentage = (consolidated_report['total_score'] / max_possible_score) * 100
+            
+            # Critérios para aprovação geral:
+            # 1. Score mínimo de 80%
+            # 2. Máximo 1 issue crítico
+            # 3. Validação de sessão deve ter passado
+            critical_issues_count = len(consolidated_report['critical_issues'])
+            session_passed = consolidated_report['validations']['session_validation']['session_valid']
+            
+            consolidated_report['all_validations_passed'] = (
+                score_percentage >= 80 and 
+                critical_issues_count <= 1 and 
+                session_passed
+            )
+            
+            # Gerar resumo personalizado
+            if consolidated_report['all_validations_passed']:
+                consolidated_report['summary'] = f"✅ CONTROLE VALIDADO COM SUCESSO - Score: {score_percentage:.1f}% ({consolidated_report['total_score']}/{max_possible_score})"
+                consolidated_report['recommendations'].append("Sistema pronto para automação do Google Ads")
+                
+                self._log_step_success("Validação Robusta Consolidada", step_start, {
+                    'score_final': f"{consolidated_report['total_score']}/{max_possible_score}",
+                    'percentual': f"{score_percentage:.1f}%",
+                    'validacoes_aprovadas': sum(1 for v in consolidated_report['validations'].values() 
+                                             if v.get('session_valid') or v.get('session_active') or v.get('navigation_successful')),
+                    'issues_criticos': critical_issues_count
+                })
+            else:
+                reasons = []
+                if score_percentage < 80:
+                    reasons.append(f"Score baixo: {score_percentage:.1f}%")
+                if critical_issues_count > 1:
+                    reasons.append(f"{critical_issues_count} issues críticos")
+                if not session_passed:
+                    reasons.append("Controle de sessão falhou")
+                
+                consolidated_report['summary'] = f"❌ VALIDAÇÃO FALHOU - Motivos: {', '.join(reasons)}"
+                consolidated_report['recommendations'].append("Reiniciar conexão com AdsPower necessário")
+                
+                self._log_step_failure("Validação Robusta Consolidada", step_start,
+                                     RuntimeError(consolidated_report['summary']), {
+                    'score_obtido': f"{consolidated_report['total_score']}/{max_possible_score}",
+                    'percentual': f"{score_percentage:.1f}%",
+                    'issues_criticos': consolidated_report['critical_issues'],
+                    'recomendacoes': consolidated_report['recommendations']
+                })
+            
+            return consolidated_report
+            
+        except Exception as e:
+            consolidated_report['critical_issues'].append(f"Erro crítico na validação consolidada: {str(e)}")
+            consolidated_report['summary'] = f"💥 FALHA CRÍTICA NA VALIDAÇÃO: {str(e)}"
+            self._log_step_failure("Validação Robusta Consolidada", step_start, e, consolidated_report)
+            return consolidated_report
+    
+    def _log_validation_failure(self, validation_result: Dict, connection_method: str) -> None:
+        """🚨 SISTEMA DE ALERTAS CLAROS para falhas de validação
+        
+        Gera alertas detalhados e específicos sobre exatamente qual aspecto
+        do controle do navegador não está funcionando.
+        
+        Args:
+            validation_result: Resultado da validação consolidada
+            connection_method: Método de conexão que foi usado
+        """
+        self.logger.error("🚨" + "="*80)
+        self.logger.error(f"🚨 ALERTA DE VALIDAÇÃO: FALHA NO CONTROLE DO NAVEGADOR")
+        self.logger.error(f"🚨 Método de Conexão: {connection_method}")
+        self.logger.error(f"🚨 Timestamp: {datetime.now().isoformat()}")
+        self.logger.error("🚨" + "="*80)
+        
+        # RESUMO GERAL
+        self.logger.error(f"💥 RESUMO: {validation_result.get('summary', 'Falha na validação')}")
+        self.logger.error(f"📊 Score Final: {validation_result.get('total_score', 0)}/120 pontos")
+        
+        # ISSUES CRÍTICOS ESPECÍFICOS
+        critical_issues = validation_result.get('critical_issues', [])
+        if critical_issues:
+            self.logger.error(f"🔥 PROBLEMAS CRÍTICOS DETECTADOS ({len(critical_issues)}):")
+            for i, issue in enumerate(critical_issues, 1):
+                self.logger.error(f"   🔥 {i}. {issue}")
+        
+        # ANÁLISE DETALHADA POR VALIDAÇÃO
+        validations = validation_result.get('validations', {})
+        
+        # Análise da Validação de Sessão
+        if 'session_validation' in validations:
+            session = validations['session_validation']
+            if not session.get('session_valid', False):
+                self.logger.error(f"❌ CONTROLE DE SESSÃO COMPROMETIDO:")
+                
+                tests = session.get('tests_performed', {})
+                for test_name, test_result in tests.items():
+                    if test_result.get('status') == 'FALHA':
+                        self.logger.error(f"   ❌ {test_name.upper()}: {test_result.get('error', 'Falha desconhecida')}")
+                    elif test_result.get('score', 0) == 0:
+                        self.logger.error(f"   ⚠️ {test_name.upper()}: Não funcionou adequadamente")
+        
+        # Análise da Validação de Sessão Ativa
+        if 'active_validation' in validations:
+            active = validations['active_validation']
+            if not active.get('session_active', False):
+                self.logger.error(f"❌ SESSÃO INATIVA DETECTADA:")
+                health_checks = active.get('health_checks', {})
+                for check_name, check_result in health_checks.items():
+                    if not check_result:
+                        self.logger.error(f"   ❌ {check_name.upper()}: Falhou")
+            
+            if not active.get('session_responsive', False):
+                self.logger.error(f"❌ SESSÃO LENTA/NÃO RESPONSIVA:")
+                response_times = active.get('response_times', {})
+                for command, time_taken in response_times.items():
+                    if time_taken > 3.0:
+                        self.logger.error(f"   🐌 {command.upper()}: {time_taken:.3f}s (muito lento)")
+        
+        # Análise da Validação de Navegação
+        if 'navigation_validation' in validations:
+            nav = validations['navigation_validation']
+            if not nav.get('navigation_successful', False):
+                self.logger.error(f"❌ NAVEGAÇÃO PARA GOOGLE.COM FALHOU:")
+                
+                errors = nav.get('errors', [])
+                for error in errors:
+                    self.logger.error(f"   ❌ ERRO DE NAVEGAÇÃO: {error}")
+                
+                steps = nav.get('steps_performed', [])
+                for step in steps:
+                    if step.get('status') == 'falha':
+                        self.logger.error(f"   ❌ ETAPA '{step.get('step', 'desconhecida')}' FALHOU: {step.get('error', 'Erro desconhecido')}")
+        
+        # RECOMENDAÇÕES DE RESOLUÇÃO
+        recommendations = validation_result.get('recommendations', [])
+        if recommendations:
+            self.logger.error(f"💡 RECOMENDAÇÕES PARA RESOLUÇÃO ({len(recommendations)}):")
+            for i, rec in enumerate(recommendations, 1):
+                self.logger.error(f"   💡 {i}. {rec}")
+        
+        # AÇÕES SUGERIDAS
+        self.logger.error(f"🛠️ AÇÕES SUGERIDAS:")
+        self.logger.error(f"   🛠️ 1. Verificar se AdsPower está executando corretamente")
+        self.logger.error(f"   🛠️ 2. Reiniciar o perfil do AdsPower")
+        self.logger.error(f"   🛠️ 3. Verificar conectividade de rede")
+        self.logger.error(f"   🛠️ 4. Reiniciar a aplicação de automação")
+        self.logger.error(f"   🛠️ 5. Verificar logs detalhados acima para problemas específicos")
+        
+        self.logger.error("🚨" + "="*80)
+        self.logger.error(f"🚨 FIM DO ALERTA DE VALIDAÇÃO")
+        self.logger.error("🚨" + "="*80)
+    
+    def _validate_adspower_connection(self, browser_info: Dict) -> bool:
+        """🧪 VALIDAÇÃO EXPLÍCITA DE SESSÃO com logs detalhados - MÉTODO LEGADO
+        
+        Esta função está mantida para compatibilidade, mas o novo sistema
+        usa _execute_comprehensive_validation() que é muito mais robusto.
+        """
+        if not self.driver:
+            self.logger.error("💥 ERRO: Driver está None após conexão!")
+            return False
+        
+        try:
+            # Configurar WebDriverWait
+            self.wait = WebDriverWait(self.driver, self.default_timeout)
+            self.logger.info(f"⏱️ WebDriverWait configurado: timeout {self.default_timeout}s")
+            
+            # TESTE 1: URL atual
+            current_url = self.driver.current_url
+            self.logger.info(f"🔍 VALIDAÇÃO 1 - URL atual: {current_url}")
+            
+            # TESTE 2: Título da página
+            title = self.driver.title or "[Sem título]"
+            self.logger.info(f"🔍 VALIDAÇÃO 2 - Título: {title}")
+            
+            # TESTE 3: Window handles (abas)
+            windows = self.driver.window_handles
+            self.logger.info(f"🔍 VALIDAÇÃO 3 - Abas: {len(windows)} aba(s) detectada(s)")
+            
+            # TESTE 4: Executar JavaScript básico
+            js_result = self.driver.execute_script("return 'ADSPOWER_CONNECTION_OK';")
+            if js_result == 'ADSPOWER_CONNECTION_OK':
+                self.logger.info("🔍 VALIDAÇÃO 4 - JavaScript: ✅ FUNCIONAL")
+            else:
+                self.logger.warning(f"🔍 VALIDAÇÃO 4 - JavaScript: ⚠️ Resultado: {js_result}")
+            
+            # TESTE 5: Verificar se é realmente o AdsPower (não Chrome novo)
+            user_agent = self.driver.execute_script("return navigator.userAgent;")
+            self.logger.info(f"🔍 VALIDAÇÃO 5 - User Agent: {user_agent[:100]}...")
+            
+            # TESTE 6: Testar capacidade de controle básico
+            window_size = self.driver.get_window_size()
+            self.logger.info(f"🔍 VALIDAÇÃO 6 - Tamanho janela: {window_size}")
+            
+            # RESUMO DE VALIDAÇÃO
+            validation_summary = {
+                'url': current_url,
+                'title': title,
+                'tabs_count': len(windows),
+                'javascript_ok': js_result == 'ADSPOWER_CONNECTION_OK',
+                'window_size': window_size
+            }
+            
+            self.logger.info(f"✅ VALIDAÇÃO COMPLETA - AdsPower conectado com SUCESSO!")
+            self.logger.info(f"📊 Resumo da sessão: {validation_summary}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"💥 FALHA na validação da conexão: {str(e)}")
             return False
     
     def prepare_browser_for_navigation(self) -> bool:
@@ -591,6 +1406,722 @@ class GoogleAdsAutomation:
             self.logger.error(f"💥 ERRO CRÍTICO na navegação: {str(e)}")
             self.logger.error("🔧 Verifique logs detalhados acima")
             return False
+    
+    def validate_adspower_session(self) -> Dict:
+        """🔍 VALIDAÇÃO EXPLÍCITA E ROBUSTA DE CONTROLE DO NAVEGADOR AdsPower
+        
+        Esta função realiza uma bateria completa de testes para confirmar com certeza absoluta
+        que o Selenium está realmente controlando o AdsPower corretamente.
+        
+        Returns:
+            Dict: Relatório completo de validação com status detalhado de cada teste
+        """
+        step_start = self._log_step_start("Validação Explícita da Sessão AdsPower", 1, {
+            'objetivo': 'Confirmar controle absoluto do navegador',
+            'testes_a_executar': ['current_url', 'window_handles', 'title', 'javascript', 'user_agent', 'dimensoes_janela']
+        })
+        
+        validation_report = {
+            'session_valid': False,
+            'timestamp': datetime.now().isoformat(),
+            'driver_available': False,
+            'tests_performed': {},
+            'critical_failures': [],
+            'warnings': [],
+            'overall_score': 0,
+            'recommendation': ''
+        }
+        
+        try:
+            # VALIDAÇÃO PRÉVIA: Driver disponível
+            if not self.driver:
+                validation_report['critical_failures'].append("Driver não está inicializado")
+                self._log_step_failure("Validação Explícita da Sessão AdsPower", step_start,
+                                     RuntimeError("Driver não disponível"), validation_report)
+                return validation_report
+            
+            validation_report['driver_available'] = True
+            self.logger.info("✅ PRÉ-VALIDAÇÃO: Driver está disponível")
+            
+            # TESTE 1: Verificação de URL atual (conectividade básica)
+            test_start = datetime.now().isoformat()
+            try:
+                current_url = self.driver.current_url
+                test_duration = (datetime.now() - datetime.fromisoformat(test_start)).total_seconds()
+                
+                validation_report['tests_performed']['current_url'] = {
+                    'status': 'SUCESSO',
+                    'value': current_url,
+                    'duration': test_duration,
+                    'score': 20
+                }
+                
+                self.logger.info(f"✅ TESTE 1 SUCESSO - URL atual: {current_url} (duração: {test_duration:.3f}s)")
+                
+                # Análise da URL
+                if current_url and current_url != "data:,":
+                    self.logger.info("   📊 URL válida detectada - conexão funcional")
+                else:
+                    validation_report['warnings'].append("URL vazia ou inválida detectada")
+                    self.logger.warning("   ⚠️ URL vazia ou inválida - possível problema de carregamento")
+                    
+            except Exception as url_error:
+                validation_report['tests_performed']['current_url'] = {
+                    'status': 'FALHA',
+                    'error': str(url_error),
+                    'duration': (datetime.now() - datetime.fromisoformat(test_start)).total_seconds(),
+                    'score': 0
+                }
+                validation_report['critical_failures'].append(f"Teste URL falhou: {str(url_error)}")
+                self.logger.error(f"❌ TESTE 1 FALHA - URL atual: {str(url_error)}")
+            
+            # TESTE 2: Verificação de Window Handles (controle de abas)
+            test_start = datetime.now().isoformat()
+            try:
+                window_handles = self.driver.window_handles
+                test_duration = (datetime.now() - datetime.fromisoformat(test_start)).total_seconds()
+                
+                validation_report['tests_performed']['window_handles'] = {
+                    'status': 'SUCESSO',
+                    'count': len(window_handles),
+                    'handles': window_handles,
+                    'current_handle': self.driver.current_window_handle,
+                    'duration': test_duration,
+                    'score': 15
+                }
+                
+                self.logger.info(f"✅ TESTE 2 SUCESSO - Window Handles: {len(window_handles)} aba(s) (duração: {test_duration:.3f}s)")
+                self.logger.info(f"   📋 Handles disponíveis: {window_handles[:3]}{'...' if len(window_handles) > 3 else ''}")
+                self.logger.info(f"   🎯 Handle atual: {self.driver.current_window_handle}")
+                
+                if len(window_handles) == 0:
+                    validation_report['critical_failures'].append("Nenhuma aba disponível")
+                    self.logger.error("   ❌ CRÍTICO: Nenhuma aba disponível")
+                    
+            except Exception as handles_error:
+                validation_report['tests_performed']['window_handles'] = {
+                    'status': 'FALHA',
+                    'error': str(handles_error),
+                    'duration': (datetime.now() - datetime.fromisoformat(test_start)).total_seconds(),
+                    'score': 0
+                }
+                validation_report['critical_failures'].append(f"Teste Window Handles falhou: {str(handles_error)}")
+                self.logger.error(f"❌ TESTE 2 FALHA - Window Handles: {str(handles_error)}")
+            
+            # TESTE 3: Verificação de Título da Página
+            test_start = datetime.now().isoformat()
+            try:
+                page_title = self.driver.title or "[Sem título]"
+                test_duration = (datetime.now() - datetime.fromisoformat(test_start)).total_seconds()
+                
+                validation_report['tests_performed']['title'] = {
+                    'status': 'SUCESSO',
+                    'value': page_title,
+                    'length': len(page_title),
+                    'duration': test_duration,
+                    'score': 10
+                }
+                
+                self.logger.info(f"✅ TESTE 3 SUCESSO - Título: '{page_title}' (duração: {test_duration:.3f}s)")
+                self.logger.info(f"   📏 Comprimento do título: {len(page_title)} caracteres")
+                
+                if not page_title or page_title == "[Sem título]":
+                    validation_report['warnings'].append("Título da página vazio ou padrão")
+                    self.logger.warning("   ⚠️ Título vazio - página pode não ter carregado completamente")
+                    
+            except Exception as title_error:
+                validation_report['tests_performed']['title'] = {
+                    'status': 'FALHA',
+                    'error': str(title_error),
+                    'duration': (datetime.now() - datetime.fromisoformat(test_start)).total_seconds(),
+                    'score': 0
+                }
+                validation_report['critical_failures'].append(f"Teste Título falhou: {str(title_error)}")
+                self.logger.error(f"❌ TESTE 3 FALHA - Título: {str(title_error)}")
+            
+            # TESTE 4: Execução de JavaScript (controle avançado)
+            test_start = datetime.now().isoformat()
+            try:
+                # Teste básico de JavaScript
+                js_basic = self.driver.execute_script("return 'ADSPOWER_VALIDATION_OK';")
+                
+                # Teste de propriedades do navegador
+                js_properties = self.driver.execute_script("""
+                    return {
+                        ready_state: document.readyState,
+                        location: window.location.href,
+                        title: document.title,
+                        has_body: document.body !== null,
+                        timestamp: new Date().toISOString(),
+                        screen_width: screen.width,
+                        screen_height: screen.height,
+                        inner_width: window.innerWidth,
+                        inner_height: window.innerHeight
+                    };
+                """)
+                
+                test_duration = (datetime.now() - datetime.fromisoformat(test_start)).total_seconds()
+                
+                validation_report['tests_performed']['javascript'] = {
+                    'status': 'SUCESSO',
+                    'basic_test': js_basic,
+                    'properties': js_properties,
+                    'duration': test_duration,
+                    'score': 25
+                }
+                
+                self.logger.info(f"✅ TESTE 4 SUCESSO - JavaScript: '{js_basic}' (duração: {test_duration:.3f}s)")
+                self.logger.info(f"   📊 Estado do documento: {js_properties.get('ready_state', 'N/A')}")
+                self.logger.info(f"   🌐 Location via JS: {js_properties.get('location', 'N/A')}")
+                self.logger.info(f"   📏 Dimensões da tela: {js_properties.get('screen_width', 'N/A')}x{js_properties.get('screen_height', 'N/A')}")
+                self.logger.info(f"   🪟 Dimensões da janela: {js_properties.get('inner_width', 'N/A')}x{js_properties.get('inner_height', 'N/A')}")
+                
+                if js_basic != 'ADSPOWER_VALIDATION_OK':
+                    validation_report['warnings'].append("JavaScript básico retornou valor inesperado")
+                    self.logger.warning(f"   ⚠️ JavaScript básico inesperado: {js_basic}")
+                    
+            except Exception as js_error:
+                validation_report['tests_performed']['javascript'] = {
+                    'status': 'FALHA',
+                    'error': str(js_error),
+                    'duration': (datetime.now() - datetime.fromisoformat(test_start)).total_seconds(),
+                    'score': 0
+                }
+                validation_report['critical_failures'].append(f"Teste JavaScript falhou: {str(js_error)}")
+                self.logger.error(f"❌ TESTE 4 FALHA - JavaScript: {str(js_error)}")
+            
+            # TESTE 5: User Agent (identificação do navegador)
+            test_start = datetime.now().isoformat()
+            try:
+                user_agent = self.driver.execute_script("return navigator.userAgent;")
+                navigator_info = self.driver.execute_script("""
+                    return {
+                        userAgent: navigator.userAgent,
+                        platform: navigator.platform,
+                        language: navigator.language,
+                        cookieEnabled: navigator.cookieEnabled,
+                        onLine: navigator.onLine,
+                        vendor: navigator.vendor || 'N/A'
+                    };
+                """)
+                
+                test_duration = (datetime.now() - datetime.fromisoformat(test_start)).total_seconds()
+                
+                validation_report['tests_performed']['user_agent'] = {
+                    'status': 'SUCESSO',
+                    'user_agent': user_agent,
+                    'navigator_info': navigator_info,
+                    'duration': test_duration,
+                    'score': 15
+                }
+                
+                self.logger.info(f"✅ TESTE 5 SUCESSO - User Agent (duração: {test_duration:.3f}s)")
+                self.logger.info(f"   🌐 User Agent: {user_agent[:100]}{'...' if len(user_agent) > 100 else ''}")
+                self.logger.info(f"   💻 Platform: {navigator_info.get('platform', 'N/A')}")
+                self.logger.info(f"   🗣️ Language: {navigator_info.get('language', 'N/A')}")
+                self.logger.info(f"   🍪 Cookies Enabled: {navigator_info.get('cookieEnabled', 'N/A')}")
+                self.logger.info(f"   📡 Online: {navigator_info.get('onLine', 'N/A')}")
+                
+                # Verificação se é realmente Chrome
+                if "chrome" not in user_agent.lower():
+                    validation_report['warnings'].append("User Agent não indica Chrome")
+                    self.logger.warning("   ⚠️ User Agent não parece ser Chrome")
+                    
+            except Exception as ua_error:
+                validation_report['tests_performed']['user_agent'] = {
+                    'status': 'FALHA',
+                    'error': str(ua_error),
+                    'duration': (datetime.now() - datetime.fromisoformat(test_start)).total_seconds(),
+                    'score': 0
+                }
+                validation_report['critical_failures'].append(f"Teste User Agent falhou: {str(ua_error)}")
+                self.logger.error(f"❌ TESTE 5 FALHA - User Agent: {str(ua_error)}")
+            
+            # TESTE 6: Dimensões da Janela (controle físico)
+            test_start = datetime.now().isoformat()
+            try:
+                window_size = self.driver.get_window_size()
+                window_position = self.driver.get_window_position()
+                
+                # Teste de alteração de tamanho para verificar controle
+                original_size = window_size.copy()
+                self.driver.set_window_size(800, 600)
+                time.sleep(0.5)
+                test_size = self.driver.get_window_size()
+                self.driver.set_window_size(original_size['width'], original_size['height'])
+                
+                test_duration = (datetime.now() - datetime.fromisoformat(test_start)).total_seconds()
+                
+                validation_report['tests_performed']['window_dimensions'] = {
+                    'status': 'SUCESSO',
+                    'original_size': original_size,
+                    'position': window_position,
+                    'test_size': test_size,
+                    'size_control_works': test_size['width'] == 800 and test_size['height'] == 600,
+                    'duration': test_duration,
+                    'score': 15
+                }
+                
+                self.logger.info(f"✅ TESTE 6 SUCESSO - Dimensões da Janela (duração: {test_duration:.3f}s)")
+                self.logger.info(f"   📐 Tamanho original: {original_size['width']}x{original_size['height']}")
+                self.logger.info(f"   📍 Posição: x={window_position['x']}, y={window_position['y']}")
+                self.logger.info(f"   🧪 Teste de controle: {test_size['width']}x{test_size['height']}")
+                
+                if not (test_size['width'] == 800 and test_size['height'] == 600):
+                    validation_report['warnings'].append("Controle de dimensões da janela pode estar limitado")
+                    self.logger.warning("   ⚠️ Controle de dimensões não funcionou completamente")
+                    
+            except Exception as dim_error:
+                validation_report['tests_performed']['window_dimensions'] = {
+                    'status': 'FALHA',
+                    'error': str(dim_error),
+                    'duration': (datetime.now() - datetime.fromisoformat(test_start)).total_seconds(),
+                    'score': 0
+                }
+                validation_report['critical_failures'].append(f"Teste Dimensões falhou: {str(dim_error)}")
+                self.logger.error(f"❌ TESTE 6 FALHA - Dimensões: {str(dim_error)}")
+            
+            # ANÁLISE FINAL E PONTUAÇÃO
+            total_score = sum(test.get('score', 0) for test in validation_report['tests_performed'].values())
+            validation_report['overall_score'] = total_score
+            
+            # Determinar se sessão é válida (mínimo 70% de sucesso)
+            min_score_required = 70  # De 100 pontos possíveis
+            validation_report['session_valid'] = total_score >= min_score_required and len(validation_report['critical_failures']) == 0
+            
+            # Gerar recomendação
+            if validation_report['session_valid']:
+                validation_report['recommendation'] = 'SESSÃO VÁLIDA - Controle total do navegador confirmado'
+                self._log_step_success("Validação Explícita da Sessão AdsPower", step_start, {
+                    'pontuacao_total': total_score,
+                    'testes_realizados': len(validation_report['tests_performed']),
+                    'falhas_criticas': len(validation_report['critical_failures']),
+                    'avisos': len(validation_report['warnings'])
+                })
+            else:
+                if len(validation_report['critical_failures']) > 0:
+                    validation_report['recommendation'] = f'SESSÃO INVÁLIDA - Falhas críticas: {len(validation_report["critical_failures"])}'
+                else:
+                    validation_report['recommendation'] = f'SESSÃO LIMITADA - Pontuação baixa: {total_score}/{min_score_required}'
+                
+                self._log_step_failure("Validação Explícita da Sessão AdsPower", step_start,
+                                     RuntimeError(validation_report['recommendation']), {
+                    'pontuacao': f'{total_score}/{min_score_required}',
+                    'falhas_criticas': validation_report['critical_failures'],
+                    'avisos': validation_report['warnings']
+                })
+            
+            return validation_report
+            
+        except Exception as e:
+            validation_report['critical_failures'].append(f"Erro crítico na validação: {str(e)}")
+            validation_report['recommendation'] = 'FALHA TOTAL - Validação não pôde ser concluída'
+            self._log_step_failure("Validação Explícita da Sessão AdsPower", step_start, e, validation_report)
+            return validation_report
+    
+    def test_browser_navigation(self) -> Dict:
+        """🧭 TESTE CRÍTICO DE NAVEGAÇÃO PARA GOOGLE.COM
+        
+        Este teste navega para Google.com como validação definitiva de que o controle
+        do navegador está funcionando para navegação real na internet.
+        
+        Returns:
+            Dict: Relatório completo do teste de navegação
+        """
+        step_start = self._log_step_start("Teste Crítico de Navegação - Google.com", 2, {
+            'objetivo': 'Confirmar capacidade de navegação real na internet',
+            'url_destino': 'https://www.google.com',
+            'timeout_maximo': 30
+        })
+        
+        navigation_report = {
+            'navigation_successful': False,
+            'timestamp': datetime.now().isoformat(),
+            'target_url': 'https://www.google.com',
+            'steps_performed': [],
+            'final_url': None,
+            'final_title': None,
+            'page_elements_found': {},
+            'load_time': 0,
+            'errors': [],
+            'warnings': []
+        }
+        
+        try:
+            if not self.driver:
+                error_msg = "Driver não está disponível para teste de navegação"
+                navigation_report['errors'].append(error_msg)
+                self._log_step_failure("Teste Crítico de Navegação - Google.com", step_start,
+                                     RuntimeError(error_msg), navigation_report)
+                return navigation_report
+            
+            navigation_start = datetime.now()
+            
+            # ETAPA 1: Navegação para Google.com
+            step_info = {
+                'step': 'navegacao_inicial',
+                'status': 'em_progresso',
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            try:
+                self.logger.info("🧭 ETAPA 1: Iniciando navegação para Google.com...")
+                self.driver.get('https://www.google.com')
+                time.sleep(3)  # Aguardar carregamento inicial
+                
+                step_info['status'] = 'sucesso'
+                step_info['duration'] = (datetime.now() - datetime.fromisoformat(step_info['timestamp'])).total_seconds()
+                navigation_report['steps_performed'].append(step_info)
+                
+                self.logger.info(f"✅ ETAPA 1 SUCESSO - Comando de navegação executado (duração: {step_info['duration']:.3f}s)")
+                
+            except Exception as nav_error:
+                step_info['status'] = 'falha'
+                step_info['error'] = str(nav_error)
+                navigation_report['steps_performed'].append(step_info)
+                navigation_report['errors'].append(f"Falha na navegação inicial: {str(nav_error)}")
+                self.logger.error(f"❌ ETAPA 1 FALHA - Navegação: {str(nav_error)}")
+                
+                self._log_step_failure("Teste Crítico de Navegação - Google.com", step_start,
+                                     nav_error, navigation_report)
+                return navigation_report
+            
+            # ETAPA 2: Verificação da URL final
+            step_info = {
+                'step': 'verificacao_url',
+                'status': 'em_progresso',
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            try:
+                final_url = self.driver.current_url
+                navigation_report['final_url'] = final_url
+                
+                # Verificar se chegou realmente no Google
+                google_domains = ['google.com', 'google.com.br', 'google.pt']
+                url_valid = any(domain in final_url.lower() for domain in google_domains)
+                
+                step_info['status'] = 'sucesso' if url_valid else 'aviso'
+                step_info['final_url'] = final_url
+                step_info['url_valid'] = url_valid
+                step_info['duration'] = (datetime.now() - datetime.fromisoformat(step_info['timestamp'])).total_seconds()
+                navigation_report['steps_performed'].append(step_info)
+                
+                if url_valid:
+                    self.logger.info(f"✅ ETAPA 2 SUCESSO - URL válida do Google: {final_url}")
+                else:
+                    self.logger.warning(f"⚠️ ETAPA 2 AVISO - URL inesperada: {final_url}")
+                    navigation_report['warnings'].append(f"URL final não é do Google: {final_url}")
+                    
+            except Exception as url_error:
+                step_info['status'] = 'falha'
+                step_info['error'] = str(url_error)
+                navigation_report['steps_performed'].append(step_info)
+                navigation_report['errors'].append(f"Falha na verificação de URL: {str(url_error)}")
+                self.logger.error(f"❌ ETAPA 2 FALHA - Verificação URL: {str(url_error)}")
+            
+            # ETAPA 3: Verificação do título da página
+            step_info = {
+                'step': 'verificacao_titulo',
+                'status': 'em_progresso',
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            try:
+                final_title = self.driver.title or "[Sem título]"
+                navigation_report['final_title'] = final_title
+                
+                # Verificar se o título indica Google
+                google_titles = ['google', 'pesquisa', 'search']
+                title_valid = any(term in final_title.lower() for term in google_titles)
+                
+                step_info['status'] = 'sucesso' if title_valid else 'aviso'
+                step_info['final_title'] = final_title
+                step_info['title_valid'] = title_valid
+                step_info['duration'] = (datetime.now() - datetime.fromisoformat(step_info['timestamp'])).total_seconds()
+                navigation_report['steps_performed'].append(step_info)
+                
+                if title_valid:
+                    self.logger.info(f"✅ ETAPA 3 SUCESSO - Título válido do Google: '{final_title}'")
+                else:
+                    self.logger.warning(f"⚠️ ETAPA 3 AVISO - Título inesperado: '{final_title}'")
+                    navigation_report['warnings'].append(f"Título não indica Google: {final_title}")
+                    
+            except Exception as title_error:
+                step_info['status'] = 'falha'
+                step_info['error'] = str(title_error)
+                navigation_report['steps_performed'].append(step_info)
+                navigation_report['errors'].append(f"Falha na verificação de título: {str(title_error)}")
+                self.logger.error(f"❌ ETAPA 3 FALHA - Verificação Título: {str(title_error)}")
+            
+            # ETAPA 4: Verificação de elementos característicos do Google
+            step_info = {
+                'step': 'verificacao_elementos',
+                'status': 'em_progresso',
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            try:
+                # Procurar elementos típicos do Google
+                google_elements = {
+                    'search_box': "//input[@name='q'] | //input[@title='Pesquisar'] | //input[@title='Search']",
+                    'google_logo': "//img[contains(@alt, 'Google')] | //*[contains(@class, 'logo')]",
+                    'search_button': "//input[@value='Pesquisa Google'] | //input[@value='Google Search'] | //button[contains(text(), 'Pesquisa')]",
+                    'lucky_button': "//input[contains(@value, 'sorte')] | //input[contains(@value, 'lucky')]"
+                }
+                
+                elements_found = {}
+                for element_name, xpath in google_elements.items():
+                    try:
+                        element = WebDriverWait(self.driver, 5).until(
+                            EC.presence_of_element_located((By.XPATH, xpath))
+                        )
+                        elements_found[element_name] = True
+                        self.logger.info(f"   ✅ Elemento encontrado: {element_name}")
+                    except:
+                        elements_found[element_name] = False
+                        self.logger.info(f"   ❌ Elemento não encontrado: {element_name}")
+                
+                navigation_report['page_elements_found'] = elements_found
+                elements_count = sum(1 for found in elements_found.values() if found)
+                
+                step_info['status'] = 'sucesso' if elements_count >= 2 else 'aviso'
+                step_info['elements_found'] = elements_found
+                step_info['elements_count'] = elements_count
+                step_info['duration'] = (datetime.now() - datetime.fromisoformat(step_info['timestamp'])).total_seconds()
+                navigation_report['steps_performed'].append(step_info)
+                
+                if elements_count >= 2:
+                    self.logger.info(f"✅ ETAPA 4 SUCESSO - {elements_count} elementos do Google encontrados")
+                else:
+                    self.logger.warning(f"⚠️ ETAPA 4 AVISO - Apenas {elements_count} elementos encontrados")
+                    navigation_report['warnings'].append(f"Poucos elementos do Google encontrados: {elements_count}")
+                    
+            except Exception as elements_error:
+                step_info['status'] = 'falha'
+                step_info['error'] = str(elements_error)
+                navigation_report['steps_performed'].append(step_info)
+                navigation_report['errors'].append(f"Falha na verificação de elementos: {str(elements_error)}")
+                self.logger.error(f"❌ ETAPA 4 FALHA - Verificação Elementos: {str(elements_error)}")
+            
+            # CÁLCULO FINAL
+            navigation_end = datetime.now()
+            navigation_report['load_time'] = (navigation_end - navigation_start).total_seconds()
+            
+            # Determinar sucesso geral
+            successful_steps = sum(1 for step in navigation_report['steps_performed'] if step['status'] == 'sucesso')
+            total_steps = len(navigation_report['steps_performed'])
+            success_rate = (successful_steps / total_steps) if total_steps > 0 else 0
+            
+            # Considera sucesso se pelo menos 75% das etapas foram bem-sucedidas e sem erros críticos
+            navigation_report['navigation_successful'] = (success_rate >= 0.75 and len(navigation_report['errors']) == 0)
+            
+            if navigation_report['navigation_successful']:
+                self._log_step_success("Teste Crítico de Navegação - Google.com", step_start, {
+                    'url_final': navigation_report['final_url'],
+                    'titulo_final': navigation_report['final_title'],
+                    'tempo_carregamento': f"{navigation_report['load_time']:.3f}s",
+                    'etapas_sucesso': f"{successful_steps}/{total_steps}",
+                    'elementos_encontrados': sum(1 for found in navigation_report.get('page_elements_found', {}).values() if found)
+                })
+            else:
+                error_summary = f"Taxa de sucesso: {success_rate:.1%}, Erros: {len(navigation_report['errors'])}"
+                self._log_step_failure("Teste Crítico de Navegação - Google.com", step_start,
+                                     RuntimeError(error_summary), {
+                    'erros': navigation_report['errors'],
+                    'avisos': navigation_report['warnings'],
+                    'etapas_realizadas': total_steps
+                })
+            
+            return navigation_report
+            
+        except Exception as e:
+            navigation_report['errors'].append(f"Erro crítico no teste de navegação: {str(e)}")
+            self._log_step_failure("Teste Crítico de Navegação - Google.com", step_start, e, navigation_report)
+            return navigation_report
+    
+    def verify_session_active(self) -> Dict:
+        """⚡ VERIFICAÇÃO DE SESSÃO ATIVA E RESPONSIVA
+        
+        Confirma se a sessão WebDriver está ativa, responsiva e pronta para automação.
+        
+        Returns:
+            Dict: Relatório de status da sessão
+        """
+        step_start = self._log_step_start("Verificação de Sessão Ativa", 3, {
+            'objetivo': 'Confirmar que sessão WebDriver está ativa e responsiva',
+            'testes': ['disponibilidade_driver', 'responsividade', 'timeout_tests']
+        })
+        
+        session_report = {
+            'session_active': False,
+            'session_responsive': False,
+            'timestamp': datetime.now().isoformat(),
+            'response_times': {},
+            'health_checks': {},
+            'recommendations': []
+        }
+        
+        try:
+            # VERIFICAÇÃO 1: Driver disponível
+            if not self.driver:
+                session_report['health_checks']['driver_available'] = False
+                session_report['recommendations'].append("Reinicializar conexão com AdsPower")
+                self._log_step_failure("Verificação de Sessão Ativa", step_start,
+                                     RuntimeError("Driver não disponível"), session_report)
+                return session_report
+            
+            session_report['health_checks']['driver_available'] = True
+            self.logger.info("✅ VERIFICAÇÃO 1: Driver está disponível")
+            
+            # VERIFICAÇÃO 2: Teste de responsividade básica
+            response_start = datetime.now()
+            try:
+                # Teste simples mas efetivo
+                current_url = self.driver.current_url
+                response_time = (datetime.now() - response_start).total_seconds()
+                
+                session_report['response_times']['basic_command'] = response_time
+                session_report['health_checks']['basic_responsiveness'] = True
+                
+                self.logger.info(f"✅ VERIFICAÇÃO 2: Responsividade básica OK (tempo: {response_time:.3f}s)")
+                
+                if response_time > 5.0:
+                    session_report['recommendations'].append("Sessão lenta - considerar reinicialização")
+                    self.logger.warning(f"⚠️ Sessão lenta detectada: {response_time:.3f}s")
+                
+            except Exception as resp_error:
+                session_report['health_checks']['basic_responsiveness'] = False
+                session_report['recommendations'].append("Sessão não responsiva - reinicialização necessária")
+                self.logger.error(f"❌ VERIFICAÇÃO 2 FALHA: {str(resp_error)}")
+            
+            # VERIFICAÇÃO 3: Teste de comando JavaScript
+            response_start = datetime.now()
+            try:
+                js_result = self.driver.execute_script("return 'SESSION_ACTIVE_CHECK';")
+                js_response_time = (datetime.now() - response_start).total_seconds()
+                
+                session_report['response_times']['javascript_command'] = js_response_time
+                session_report['health_checks']['javascript_execution'] = js_result == 'SESSION_ACTIVE_CHECK'
+                
+                if session_report['health_checks']['javascript_execution']:
+                    self.logger.info(f"✅ VERIFICAÇÃO 3: JavaScript responsivo (tempo: {js_response_time:.3f}s)")
+                else:
+                    self.logger.error(f"❌ VERIFICAÇÃO 3: JavaScript retornou valor inesperado: {js_result}")
+                    session_report['recommendations'].append("Execução JavaScript comprometida")
+                
+            except Exception as js_error:
+                session_report['health_checks']['javascript_execution'] = False
+                session_report['recommendations'].append("JavaScript não funcional")
+                self.logger.error(f"❌ VERIFICAÇÃO 3 FALHA: {str(js_error)}")
+            
+            # VERIFICAÇÃO 4: Teste de múltiplas operações sequenciais
+            response_start = datetime.now()
+            try:
+                # Sequência de comandos para testar estabilidade
+                commands_results = []
+                
+                # Comando 1: URL
+                commands_results.append(self.driver.current_url is not None)
+                
+                # Comando 2: Título
+                commands_results.append(self.driver.title is not None)
+                
+                # Comando 3: Window handles
+                commands_results.append(len(self.driver.window_handles) > 0)
+                
+                # Comando 4: JavaScript
+                test_js = self.driver.execute_script("return window.location.href;")
+                commands_results.append(test_js is not None)
+                
+                sequential_response_time = (datetime.now() - response_start).total_seconds()
+                successful_commands = sum(commands_results)
+                
+                session_report['response_times']['sequential_commands'] = sequential_response_time
+                session_report['health_checks']['sequential_stability'] = successful_commands == len(commands_results)
+                
+                self.logger.info(f"✅ VERIFICAÇÃO 4: Estabilidade sequencial {successful_commands}/{len(commands_results)} (tempo: {sequential_response_time:.3f}s)")
+                
+                if successful_commands < len(commands_results):
+                    session_report['recommendations'].append("Instabilidade detectada em comandos sequenciais")
+                
+            except Exception as seq_error:
+                session_report['health_checks']['sequential_stability'] = False
+                session_report['recommendations'].append("Falha crítica em comandos sequenciais")
+                self.logger.error(f"❌ VERIFICAÇÃO 4 FALHA: {str(seq_error)}")
+            
+            # VERIFICAÇÃO 5: Teste de capacidade de interação
+            response_start = datetime.now()
+            try:
+                # Testar se consegue obter informações da página
+                page_info = self.driver.execute_script("""
+                    return {
+                        ready: document.readyState === 'complete',
+                        interactive: document.readyState !== 'loading',
+                        has_body: document.body !== null,
+                        can_focus: typeof window.focus === 'function'
+                    };
+                """)
+                
+                interaction_response_time = (datetime.now() - response_start).total_seconds()
+                interaction_capable = all(page_info.values())
+                
+                session_report['response_times']['interaction_test'] = interaction_response_time
+                session_report['health_checks']['interaction_capable'] = interaction_capable
+                
+                if interaction_capable:
+                    self.logger.info(f"✅ VERIFICAÇÃO 5: Capacidade de interação OK (tempo: {interaction_response_time:.3f}s)")
+                else:
+                    self.logger.warning(f"⚠️ VERIFICAÇÃO 5: Limitações de interação detectadas: {page_info}")
+                    session_report['recommendations'].append("Capacidade de interação limitada")
+                
+            except Exception as interact_error:
+                session_report['health_checks']['interaction_capable'] = False
+                session_report['recommendations'].append("Incapaz de testar interação")
+                self.logger.error(f"❌ VERIFICAÇÃO 5 FALHA: {str(interact_error)}")
+            
+            # ANÁLISE FINAL
+            health_checks_passed = sum(1 for check in session_report['health_checks'].values() if check)
+            total_checks = len(session_report['health_checks'])
+            health_score = (health_checks_passed / total_checks) if total_checks > 0 else 0
+            
+            # Calcular responsividade média
+            response_times = list(session_report['response_times'].values())
+            avg_response_time = sum(response_times) / len(response_times) if response_times else float('inf')
+            
+            # Determinar status da sessão
+            session_report['session_active'] = health_score >= 0.8  # 80% dos checks passaram
+            session_report['session_responsive'] = avg_response_time < 3.0  # Média abaixo de 3s
+            
+            overall_session_ok = session_report['session_active'] and session_report['session_responsive']
+            
+            if overall_session_ok:
+                self._log_step_success("Verificação de Sessão Ativa", step_start, {
+                    'saude_geral': f"{health_checks_passed}/{total_checks} checks OK",
+                    'tempo_resposta_medio': f"{avg_response_time:.3f}s",
+                    'sessao_ativa': session_report['session_active'],
+                    'sessao_responsiva': session_report['session_responsive']
+                })
+            else:
+                reasons = []
+                if not session_report['session_active']:
+                    reasons.append(f"Saúde baixa: {health_score:.1%}")
+                if not session_report['session_responsive']:
+                    reasons.append(f"Lentidão: {avg_response_time:.3f}s")
+                
+                self._log_step_failure("Verificação de Sessão Ativa", step_start,
+                                     RuntimeError(f"Sessão problemática: {', '.join(reasons)}"), {
+                    'recomendacoes': session_report['recommendations'],
+                    'checks_falharam': total_checks - health_checks_passed,
+                    'tempo_resposta_medio': avg_response_time
+                })
+            
+            return session_report
+            
+        except Exception as e:
+            session_report['recommendations'].append("Falha crítica na verificação de sessão")
+            self._log_step_failure("Verificação de Sessão Ativa", step_start, e, session_report)
+            return session_report
     
     def close_popups(self):
         """Fechar popups e elementos que podem atrapalhar"""
@@ -1823,36 +3354,9 @@ class GoogleAdsAutomation:
         self.logger.error(f"💥 FALHA COMPLETA após {max_attempts} tentativas: {description}")
         return False
     
-    def _setup_chrome_driver_smart(self, browser_info: Dict, options) -> bool:
-        """🎯 Sistema inteligente para configurar ChromeDriver com múltiplas versões"""
-        self.logger.info("🎯 INICIANDO sistema inteligente de ChromeDriver...")
-        
-        # Detectar versão do Chrome no browser do AdsPower
-        chrome_version = self._detect_chrome_version(browser_info)
-        self.logger.info(f"🔍 Versão do Chrome detectada: {chrome_version}")
-        
-        # Lista de tentativas de configuração em ordem de prioridade
-        setup_attempts = [
-            ("AdsPower WebDriver", lambda: self._try_adspower_chromedriver(browser_info, options)),
-            ("PATH ChromeDriver", lambda: self._try_path_chromedriver(options)),
-            ("Versão Específica", lambda: self._try_specific_version_chromedriver(chrome_version, options)),
-            ("Versões Múltiplas", lambda: self._try_multiple_versions_chromedriver(options)),
-            ("Último Recurso", lambda: self._try_latest_chromedriver(options))
-        ]
-        
-        # Tentar cada método até conseguir
-        for method_name, setup_method in setup_attempts:
-            self.logger.info(f"📍 Tentando: {method_name}")
-            try:
-                if setup_method():
-                    self.logger.info(f"✅ SUCESSO com {method_name}!")
-                    return True
-                else:
-                    self.logger.warning(f"⚠️ {method_name} falhou")
-            except Exception as e:
-                self.logger.warning(f"⚠️ {method_name} erro: {str(e)}")
-        
-        return False
+    # SISTEMA REMOVIDO: _setup_chrome_driver_smart
+    # CORREÇÃO CRÍTICA: Eliminado sistema completo que criava Chrome local
+    # Sistema agora exige 100% webdriver.Remote() com AdsPower ou falha claramente
     
     def _detect_chrome_version(self, browser_info: Dict) -> str:
         """🔍 Detectar versão do Chrome no AdsPower"""
@@ -1892,199 +3396,30 @@ class GoogleAdsAutomation:
             self.logger.error(f"💥 Erro ao detectar versão do Chrome: {str(e)}")
             return "120.0"
     
-    def _try_adspower_chromedriver(self, browser_info: Dict, options) -> bool:
-        """🔧 Tentar usar ChromeDriver fornecido pelo AdsPower"""
-        try:
-            if 'webdriver' not in browser_info:
-                return False
-                
-            driver_path = browser_info['webdriver']
-            import os
-            if not os.path.exists(driver_path):
-                self.logger.warning(f"⚠️ ChromeDriver do AdsPower não existe: {driver_path}")
-                return False
-            
-            from selenium import webdriver
-            from selenium.webdriver.chrome.service import Service
-            
-            service = Service(driver_path)
-            self.driver = webdriver.Chrome(service=service, options=options)
-            return self.driver is not None
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Falha ChromeDriver AdsPower: {str(e)}")
-            return False
+    # MÉTODO REMOVIDO: _try_adspower_chromedriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Chrome() local
     
-    def _try_path_chromedriver(self, options) -> bool:
-        """🔧 Tentar usar ChromeDriver do PATH"""
-        try:
-            from selenium import webdriver
-            self.driver = webdriver.Chrome(options=options)
-            return self.driver is not None
-        except Exception as e:
-            self.logger.warning(f"⚠️ Falha ChromeDriver PATH: {str(e)}")
-            return False
+    # MÉTODO REMOVIDO: _try_path_chromedriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Chrome() local
     
-    def _try_specific_version_chromedriver(self, chrome_version: str, options) -> bool:
-        """🔧 Tentar instalar ChromeDriver de versão específica"""
-        try:
-            from selenium import webdriver
-            from webdriver_manager.chrome import ChromeDriverManager
-            from selenium.webdriver.chrome.service import Service
-            
-            # Extrair major version (ex: "120.0" -> "120")
-            major_version = chrome_version.split('.')[0]
-            self.logger.info(f"🎯 Instalando ChromeDriver para versão {major_version}")
-            
-            # Tentar versão específica (webdriver_manager pode não aceitar version específica)
-            try:
-                driver_path = ChromeDriverManager().install()
-            except:
-                # Fallback para download direto se disponível
-                driver_path = ChromeDriverManager().install()
-            service = Service(driver_path)
-            self.driver = webdriver.Chrome(service=service, options=options)
-            return self.driver is not None
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Falha versão específica: {str(e)}")
-            return False
+    # MÉTODO REMOVIDO: _try_specific_version_chromedriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Chrome() local
     
-    def _try_multiple_versions_chromedriver(self, options) -> bool:
-        """🔧 Tentar múltiplas versões de ChromeDriver"""
-        common_versions = ["120", "119", "118", "117", "116", "115", "114", "113"]
-        
-        for version in common_versions:
-            try:
-                self.logger.info(f"🔄 Tentando versão {version}...")
-                from selenium import webdriver
-                from webdriver_manager.chrome import ChromeDriverManager
-                from selenium.webdriver.chrome.service import Service
-                
-                driver_path = ChromeDriverManager().install()
-                service = Service(driver_path)
-                self.driver = webdriver.Chrome(service=service, options=options)
-                
-                if self.driver:
-                    self.logger.info(f"✅ SUCESSO com versão {version}!")
-                    return True
-                    
-            except Exception as e:
-                self.logger.warning(f"⚠️ Versão {version} falhou: {str(e)}")
-                continue
-        
-        return False
+    # MÉTODO REMOVIDO: _try_multiple_versions_chromedriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Chrome() local
     
-    def _try_latest_chromedriver(self, options) -> bool:
-        """🔧 Última tentativa: ChromeDriver mais recente"""
-        try:
-            from selenium import webdriver
-            from webdriver_manager.chrome import ChromeDriverManager
-            from selenium.webdriver.chrome.service import Service
-            
-            self.logger.warning("⚠️ ÚLTIMA TENTATIVA: ChromeDriver mais recente")
-            driver_path = ChromeDriverManager().install()
-            service = Service(driver_path)
-            self.driver = webdriver.Chrome(service=service, options=options)
-            return self.driver is not None
-            
-        except Exception as e:
-            self.logger.error(f"💥 Última tentativa falhou: {str(e)}")
-            return False
+    # MÉTODO REMOVIDO: _try_latest_chromedriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Chrome() local
     
-    def _setup_firefox_driver(self, browser_info: Dict, chrome_options) -> bool:
-        """🦊 Configurar Firefox WebDriver para perfis Firefox do AdsPower"""
-        self.logger.info("🦊 CONFIGURANDO Firefox WebDriver...")
-        
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.firefox.options import Options as FirefoxOptions
-            from selenium.webdriver.firefox.service import Service as FirefoxService
-            
-            # Configurar opções do Firefox
-            firefox_options = FirefoxOptions()
-            
-            # Transferir configurações relevantes do chrome_options para firefox
-            if hasattr(chrome_options, 'headless') and chrome_options.headless:
-                firefox_options.add_argument('--headless')
-            
-            # Configurar debugging port se disponível
-            debugger_address = browser_info.get('debugger_address')
-            if debugger_address:
-                host, port = debugger_address.split(':')
-                firefox_options.set_preference("devtools.debugger.remote-enabled", True)
-                firefox_options.set_preference("devtools.debugger.remote-port", int(port))
-                firefox_options.add_argument(f"--marionette-port={port}")
-            
-            # Tentativas de configuração do Firefox
-            firefox_attempts = [
-                ("AdsPower GeckoDriver", lambda: self._try_adspower_geckodriver(browser_info, firefox_options)),
-                ("PATH GeckoDriver", lambda: self._try_path_geckodriver(firefox_options)),
-                ("Auto-Install GeckoDriver", lambda: self._try_auto_install_geckodriver(firefox_options))
-            ]
-            
-            for method_name, setup_method in firefox_attempts:
-                self.logger.info(f"📍 Firefox: {method_name}")
-                try:
-                    if setup_method():
-                        self.logger.info(f"✅ SUCESSO Firefox: {method_name}!")
-                        return True
-                    else:
-                        self.logger.warning(f"⚠️ Firefox {method_name} falhou")
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Firefox {method_name} erro: {str(e)}")
-            
-            return False
-            
-        except ImportError:
-            self.logger.error("💥 Selenium Firefox não está disponível")
-            return False
-        except Exception as e:
-            self.logger.error(f"💥 Erro ao configurar Firefox: {str(e)}")
-            return False
+    # SISTEMA REMOVIDO: _setup_firefox_driver
+    # CORREÇÃO CRÍTICA: Eliminado sistema Firefox que criava drivers locais
+    # Sistema agora requer 100% webdriver.Remote() com AdsPower ou falha claramente
     
-    def _try_adspower_geckodriver(self, browser_info: Dict, options) -> bool:
-        """🔧 Tentar usar GeckoDriver do AdsPower"""
-        try:
-            # AdsPower pode fornecer geckodriver similar ao chromedriver
-            geckodriver_path = browser_info.get('geckodriver', browser_info.get('webdriver'))
-            if not geckodriver_path:
-                return False
-                
-            import os
-            if not os.path.exists(geckodriver_path):
-                return False
-            
-            from selenium import webdriver
-            from selenium.webdriver.firefox.service import Service as FirefoxService
-            
-            service = FirefoxService(geckodriver_path)
-            self.driver = webdriver.Firefox(service=service, options=options)
-            return self.driver is not None
-            
-        except Exception:
-            return False
+    # MÉTODO REMOVIDO: _try_adspower_geckodriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Firefox() local
     
-    def _try_path_geckodriver(self, options) -> bool:
-        """🔧 Tentar usar GeckoDriver do PATH"""
-        try:
-            from selenium import webdriver
-            self.driver = webdriver.Firefox(options=options)
-            return self.driver is not None
-        except Exception:
-            return False
+    # MÉTODO REMOVIDO: _try_path_geckodriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Firefox() local
     
-    def _try_auto_install_geckodriver(self, options) -> bool:
-        """🔧 Instalar automaticamente GeckoDriver"""
-        try:
-            from selenium import webdriver
-            from webdriver_manager.firefox import GeckoDriverManager
-            from selenium.webdriver.firefox.service import Service as FirefoxService
-            
-            driver_path = GeckoDriverManager().install()
-            service = FirefoxService(driver_path)
-            self.driver = webdriver.Firefox(service=service, options=options)
-            return self.driver is not None
-            
-        except Exception:
-            return False
+    # MÉTODO REMOVIDO: _try_auto_install_geckodriver
+    # CORREÇÃO CRÍTICA: Eliminado método que criava webdriver.Firefox() local

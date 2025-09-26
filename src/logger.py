@@ -8,6 +8,7 @@ Configuração centralizada de logging para todo o projeto
 import logging
 import os
 from datetime import datetime
+from typing import Optional, Dict, Any
 from logging.handlers import RotatingFileHandler
 
 def setup_logger(name: str = "GoogleAdsCampaignBot", level: int = logging.INFO) -> logging.Logger:
@@ -66,7 +67,7 @@ def setup_logger(name: str = "GoogleAdsCampaignBot", level: int = logging.INFO) 
     
     return logger
 
-def get_logger(name: str = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> logging.Logger:
     """Obter logger existente ou criar novo"""
     if name is None:
         name = "GoogleAdsCampaignBot"
@@ -84,7 +85,9 @@ class BotLoggerAdapter(logging.LoggerAdapter):
         super().__init__(logger, extra)
     
     def process(self, msg, kwargs):
-        return f"[{self.extra['context']}] {msg}", kwargs
+        if self.extra and 'context' in self.extra:
+            return f"[{self.extra['context']}] {msg}", kwargs
+        return msg, kwargs
 
 def get_profile_logger(profile_name: str) -> BotLoggerAdapter:
     """Obter logger com contexto de perfil específico"""
@@ -148,7 +151,7 @@ def log_performance(func):
     return wrapper
 
 # Função para logging estruturado de eventos
-def log_event(event_type: str, message: str, details: dict = None, level: int = logging.INFO):
+def log_event(event_type: str, message: str, details: Optional[Dict[str, Any]] = None, level: int = logging.INFO):
     """Log estruturado de eventos importantes"""
     logger = get_logger()
     
@@ -190,7 +193,7 @@ def log_campaign_event(campaign_name: str, event: str, message: str, success: bo
         level
     )
 
-def log_automation_event(action: str, message: str, success: bool = True, details: dict = None):
+def log_automation_event(action: str, message: str, success: bool = True, details: Optional[Dict[str, Any]] = None):
     """Log evento de automação"""
     level = logging.INFO if success else logging.ERROR
     event_details = {'action': action, 'success': success}
@@ -200,7 +203,7 @@ def log_automation_event(action: str, message: str, success: bool = True, detail
     log_event('AUTOMATION_EVENT', message, event_details, level)
 
 # Função para gerar relatório de logs
-def generate_log_summary(log_file_path: str = None) -> dict:
+def generate_log_summary(log_file_path: Optional[str] = None) -> Dict[str, int]:
     """Gerar resumo dos logs para relatório"""
     if not log_file_path:
         logs_dir = "logs"
