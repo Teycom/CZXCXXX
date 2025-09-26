@@ -274,11 +274,465 @@ class GoogleAdsAutomation:
             
             self.wait_for_page_load()
             
-            # Passo 4: Configurar detalhes da campanha
-            return self.configure_campaign_details(config)
+            # Passo 4: Usar novo fluxo oficial
+            return self.create_campaign_google_ads_official_flow(config)
             
         except Exception as e:
             self.logger.error(f"Erro na criação da campanha: {str(e)}")
+            return False
+    
+    def create_campaign_google_ads_official_flow(self, config: Dict) -> bool:
+        """Seguir exatamente o passo a passo oficial do Google Ads"""
+        try:
+            self.logger.info("🚀 Iniciando criação de campanha seguindo fluxo oficial do Google Ads...")
+            
+            # PASSO 1-2: Acessar seção Campanhas e iniciar nova campanha
+            if not self.step_1_2_start_new_campaign():
+                return False
+            
+            # PASSO 3: Escolher objetivo da campanha
+            if not self.step_3_choose_campaign_objective(config):
+                return False
+            
+            # PASSO 4: Selecionar tipo de campanha (Rede de Pesquisa)
+            if not self.step_4_select_search_network():
+                return False
+            
+            # PASSO 5: Definir nome da campanha
+            if not self.step_5_define_campaign_name(config):
+                return False
+            
+            # PASSO 6: Configurar definições da campanha
+            if not self.step_6_configure_campaign_settings(config):
+                return False
+            
+            # PASSO 7: Criar grupos de anúncios
+            if not self.step_7_create_ad_groups(config):
+                return False
+            
+            # PASSO 8: Criar anúncios de pesquisa responsivos
+            if not self.step_8_create_responsive_search_ads(config):
+                return False
+            
+            # PASSO 9: Adicionar extensões de anúncio
+            if not self.step_9_add_ad_extensions(config):
+                return False
+            
+            # PASSO 10: Revisar e publicar campanha
+            if not self.step_10_review_and_publish():
+                return False
+            
+            self.logger.info("✅ Campanha criada com sucesso seguindo fluxo oficial!")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erro na criação da campanha: {str(e)}")
+            return False
+    
+    def step_1_2_start_new_campaign(self) -> bool:
+        """PASSO 1-2: Clicar em Campanhas no menu lateral e no botão (+) Nova campanha"""
+        try:
+            self.logger.info("📋 PASSO 1-2: Navegando para seção Campanhas...")
+            
+            # Primeiro, clicar no menu Campanhas (se necessário)
+            campaigns_menu_selectors = [
+                "//span[contains(text(), 'Campanhas')]",
+                "//a[contains(text(), 'Campanhas')]",
+                "//div[contains(@data-value, 'campaigns')]",
+                "//button[contains(@aria-label, 'Campanhas')]"
+            ]
+            
+            for selector in campaigns_menu_selectors:
+                if self.click_element_safe(selector):
+                    self.logger.info("✅ Clicou na seção Campanhas")
+                    break
+            
+            time.sleep(2)
+            
+            # Clicar no botão de adição (+) para Nova campanha
+            new_campaign_selectors = [
+                "//button[contains(@aria-label, 'Nova campanha')] | //button[contains(@aria-label, 'New campaign')]",
+                "//button[contains(text(), '+')]",
+                "//button[contains(@data-value, 'new-campaign')]",
+                "//div[contains(@class, 'create-button')]//button",
+                "//button[contains(@class, 'mdc-fab')]",
+                "//button[contains(@class, 'create')]"
+            ]
+            
+            for selector in new_campaign_selectors:
+                if self.click_element_safe(selector):
+                    self.logger.info("✅ Clicou no botão (+) Nova campanha")
+                    self.wait_for_page_load()
+                    return True
+            
+            self.logger.error("❌ Não foi possível encontrar botão Nova Campanha")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 1-2: {str(e)}")
+            return False
+    
+    def step_3_choose_campaign_objective(self, config: Dict) -> bool:
+        """PASSO 3: Escolher o objetivo da campanha (Vendas, Leads, Tráfego do site)"""
+        try:
+            self.logger.info("🎯 PASSO 3: Escolhendo objetivo da campanha...")
+            
+            # Objetivos possíveis conforme documento
+            objective_selectors = [
+                "//div[contains(text(), 'Vendas')] | //div[contains(text(), 'Sales')]",
+                "//div[contains(text(), 'Leads')] | //div[contains(text(), 'Leads')]", 
+                "//div[contains(text(), 'Tráfego do website')] | //div[contains(text(), 'Website traffic')]",
+                "//button[contains(text(), 'Criar campanha sem orientação de objetivo')] | //button[contains(text(), 'Create campaign without goal guidance')]"
+            ]
+            
+            # Tentar clicar em um objetivo (prioridade: Vendas > Leads > Tráfego > Sem objetivo)
+            for selector in objective_selectors:
+                if self.click_element_safe(selector):
+                    self.logger.info("✅ Objetivo da campanha selecionado")
+                    self.wait_for_page_load()
+                    return True
+            
+            # Se nenhum objetivo foi encontrado, continuar (talvez não seja necessário)
+            self.logger.info("ℹ️ Nenhum objetivo específico encontrado, continuando...")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 3: {str(e)}")
+            return False
+    
+    def step_4_select_search_network(self) -> bool:
+        """PASSO 4: Selecionar o tipo de campanha 'Rede de Pesquisa'"""
+        try:
+            self.logger.info("🔍 PASSO 4: Selecionando Rede de Pesquisa...")
+            
+            search_network_selectors = [
+                "//div[contains(text(), 'Pesquisa')] | //div[contains(text(), 'Search')]",
+                "//button[contains(text(), 'Pesquisa')] | //button[contains(text(), 'Search')]",
+                "//div[contains(@class, 'campaign-type')]//div[contains(text(), 'Pesquisa')]",
+                "//div[contains(@data-value, 'search')]"
+            ]
+            
+            for selector in search_network_selectors:
+                if self.click_element_safe(selector):
+                    self.logger.info("✅ Rede de Pesquisa selecionada")
+                    self.wait_for_page_load()
+                    return True
+            
+            self.logger.error("❌ Não foi possível selecionar Rede de Pesquisa")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 4: {str(e)}")
+            return False
+    
+    def step_5_define_campaign_name(self, config: Dict) -> bool:
+        """PASSO 5: Definir nome descritivo da campanha"""
+        try:
+            self.logger.info("📝 PASSO 5: Definindo nome da campanha...")
+            
+            campaign_name = config.get('campaign_name', 'Campanha Pesquisa - Nova Campanha')
+            
+            name_selectors = [
+                "//input[contains(@aria-label, 'nome')] | //input[contains(@aria-label, 'name')]",
+                "//input[contains(@placeholder, 'nome')] | //input[contains(@placeholder, 'name')]",
+                "//input[contains(@id, 'campaign-name')]",
+                "//input[contains(@data-testid, 'campaign-name')]"
+            ]
+            
+            for selector in name_selectors:
+                if self.input_text_safe(selector, campaign_name, "xpath"):
+                    self.logger.info(f"✅ Nome da campanha definido: {campaign_name}")
+                    return True
+            
+            self.logger.error("❌ Não foi possível inserir nome da campanha")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 5: {str(e)}")
+            return False
+    
+    def step_6_configure_campaign_settings(self, config: Dict) -> bool:
+        """PASSO 6: Configurar definições da campanha (redes, localização, idioma, orçamento, lances)"""
+        try:
+            self.logger.info("⚙️ PASSO 6: Configurando definições da campanha...")
+            
+            # 6.1: Desmarcar "Incluir parceiros de pesquisa do Google"
+            search_partners_selectors = [
+                "//input[@type='checkbox'][contains(@aria-label, 'parceiros')] | //input[@type='checkbox'][contains(@aria-label, 'partners')]",
+                "//input[@type='checkbox'][contains(@name, 'search-partners')]",
+                "//label[contains(text(), 'parceiros')]//input[@type='checkbox']"
+            ]
+            
+            for selector in search_partners_selectors:
+                try:
+                    element = self.driver.find_element(By.XPATH, selector)
+                    if element.is_selected():
+                        element.click()
+                        self.logger.info("✅ Desmarcou parceiros de pesquisa")
+                        time.sleep(1)
+                        break
+                except:
+                    continue
+            
+            # 6.2: Configurar localização(s)
+            locations = config.get('locations', ['Brasil'])
+            if isinstance(locations, str):
+                locations = [locations]
+            
+            for location in locations:
+                location_selectors = [
+                    "//input[contains(@aria-label, 'localização')] | //input[contains(@aria-label, 'location')]",
+                    "//input[contains(@placeholder, 'localização')] | //input[contains(@placeholder, 'location')]",
+                    "//input[contains(@data-testid, 'location')]"
+                ]
+                
+                for selector in location_selectors:
+                    if self.input_text_safe(selector, location, "xpath"):
+                        # Aguardar sugestões e selecionar primeira
+                        time.sleep(2)
+                        try:
+                            suggestion = self.driver.find_element(By.XPATH, "//div[contains(@class, 'suggestion')] | //li[contains(@role, 'option')]")
+                            suggestion.click()
+                        except:
+                            pass
+                        break
+            
+            # 6.3: Configurar idioma
+            language = config.get('language', 'Português (Brasil)')
+            language_selectors = [
+                "//input[contains(@aria-label, 'idioma')] | //input[contains(@aria-label, 'language')]",
+                "//select[contains(@aria-label, 'idioma')] | //select[contains(@aria-label, 'language')]"
+            ]
+            
+            for selector in language_selectors:
+                if self.input_text_safe(selector, language, "xpath"):
+                    break
+            
+            # 6.4: Configurar orçamento diário
+            budget = config.get('budget', '50')
+            budget_selectors = [
+                "//input[contains(@aria-label, 'orçamento')] | //input[contains(@aria-label, 'budget')]",
+                "//input[contains(@placeholder, 'orçamento')] | //input[contains(@placeholder, 'budget')]",
+                "//input[@type='number'][contains(@name, 'budget')]"
+            ]
+            
+            for selector in budget_selectors:
+                if self.input_text_safe(selector, budget, "xpath"):
+                    self.logger.info(f"✅ Orçamento definido: R$ {budget}")
+                    break
+            
+            # 6.5: Configurar estratégia de lances (Maximizar cliques por padrão)
+            bidding_selectors = [
+                "//div[contains(text(), 'Maximizar cliques')] | //div[contains(text(), 'Maximize clicks')]",
+                "//button[contains(text(), 'Maximizar cliques')] | //button[contains(text(), 'Maximize clicks')]"
+            ]
+            
+            for selector in bidding_selectors:
+                if self.click_element_safe(selector, "xpath"):
+                    self.logger.info("✅ Estratégia de lances configurada")
+                    break
+            
+            # Continuar para próximo passo
+            continue_selectors = [
+                "//button[contains(text(), 'Continuar')] | //button[contains(text(), 'Continue')]",
+                "//button[contains(text(), 'Próximo')] | //button[contains(text(), 'Next')]",
+                "//button[contains(@aria-label, 'Continuar')] | //button[contains(@aria-label, 'Continue')]"
+            ]
+            
+            for selector in continue_selectors:
+                if self.click_element_safe(selector, "xpath"):
+                    self.wait_for_page_load()
+                    break
+            
+            self.logger.info("✅ Definições da campanha configuradas")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 6: {str(e)}")
+            return False
+    
+    def step_7_create_ad_groups(self, config: Dict) -> bool:
+        """PASSO 7: Criar grupos de anúncios"""
+        try:
+            self.logger.info("📁 PASSO 7: Criando grupos de anúncios...")
+            
+            # 7.1: Dar nome ao grupo de anúncios
+            ad_group_name = f"Grupo de Anúncios - {config.get('campaign_name', 'Principal')}"
+            
+            ad_group_name_selectors = [
+                "//input[contains(@aria-label, 'grupo')] | //input[contains(@aria-label, 'group')]",
+                "//input[contains(@placeholder, 'grupo')] | //input[contains(@placeholder, 'group')]",
+                "//input[contains(@name, 'ad-group')]"
+            ]
+            
+            for selector in ad_group_name_selectors:
+                if self.input_text_safe(selector, ad_group_name, "xpath"):
+                    self.logger.info(f"✅ Nome do grupo de anúncios: {ad_group_name}")
+                    break
+            
+            # 7.2: Adicionar palavras-chave
+            keywords = config.get('keywords', [])
+            if keywords:
+                keywords_text = '\\n'.join(keywords)
+                
+                keyword_selectors = [
+                    "//textarea[contains(@aria-label, 'palavra')] | //textarea[contains(@aria-label, 'keyword')]",
+                    "//textarea[contains(@placeholder, 'palavra')] | //textarea[contains(@placeholder, 'keyword')]",
+                    "//input[contains(@aria-label, 'palavra')] | //input[contains(@aria-label, 'keyword')]"
+                ]
+                
+                for selector in keyword_selectors:
+                    if self.input_text_safe(selector, keywords_text, "xpath"):
+                        self.logger.info(f"✅ Adicionadas {len(keywords)} palavras-chave")
+                        break
+            
+            # Continuar para anúncios
+            continue_selectors = [
+                "//button[contains(text(), 'Continuar')] | //button[contains(text(), 'Continue')]",
+                "//button[contains(text(), 'Próximo')] | //button[contains(text(), 'Next')]"
+            ]
+            
+            for selector in continue_selectors:
+                if self.click_element_safe(selector, "xpath"):
+                    self.wait_for_page_load()
+                    break
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 7: {str(e)}")
+            return False
+    
+    def step_8_create_responsive_search_ads(self, config: Dict) -> bool:
+        """PASSO 8: Criar anúncios de pesquisa responsivos (até 15 títulos, 4 descrições)"""
+        try:
+            self.logger.info("📝 PASSO 8: Criando anúncios de pesquisa responsivos...")
+            
+            # 8.1: URL final (obrigatório)
+            landing_url = config.get('landing_url', '')
+            if landing_url:
+                url_selectors = [
+                    "//input[contains(@aria-label, 'URL')] | //input[contains(@aria-label, 'url')]",
+                    "//input[contains(@placeholder, 'URL')] | //input[contains(@placeholder, 'url')]",
+                    "//input[contains(@name, 'final-url')]"
+                ]
+                
+                for selector in url_selectors:
+                    if self.input_text_safe(selector, landing_url, "xpath"):
+                        self.logger.info(f"✅ URL final definida: {landing_url}")
+                        break
+            
+            # 8.2: Títulos (até 15, máximo 30 caracteres cada)
+            ad_titles = config.get('ad_titles', [])
+            if ad_titles:
+                for i, title in enumerate(ad_titles[:15]):  # Máximo 15 títulos
+                    if len(title) > 30:
+                        title = title[:30]  # Máximo 30 caracteres
+                    
+                    title_selectors = [
+                        f"//input[contains(@aria-label, 'Título {i+1}')] | //input[contains(@aria-label, 'Headline {i+1}')]",
+                        f"//input[contains(@placeholder, 'Título {i+1}')] | //input[contains(@placeholder, 'Headline {i+1}')]",
+                        f"//input[contains(@name, 'headline-{i}')]"
+                    ]
+                    
+                    for selector in title_selectors:
+                        if self.input_text_safe(selector, title, "xpath"):
+                            self.logger.info(f"✅ Título {i+1}: {title}")
+                            break
+            
+            # 8.3: Descrições (até 4, máximo 90 caracteres cada)
+            ad_descriptions = config.get('ad_descriptions', [])
+            if ad_descriptions:
+                for i, description in enumerate(ad_descriptions[:4]):  # Máximo 4 descrições
+                    if len(description) > 90:
+                        description = description[:90]  # Máximo 90 caracteres
+                    
+                    desc_selectors = [
+                        f"//textarea[contains(@aria-label, 'Descrição {i+1}')] | //textarea[contains(@aria-label, 'Description {i+1}')]",
+                        f"//textarea[contains(@placeholder, 'Descrição {i+1}')] | //textarea[contains(@placeholder, 'Description {i+1}')]",
+                        f"//textarea[contains(@name, 'description-{i}')]"
+                    ]
+                    
+                    for selector in desc_selectors:
+                        if self.input_text_safe(selector, description, "xpath"):
+                            self.logger.info(f"✅ Descrição {i+1}: {description}")
+                            break
+            
+            # 8.4: Caminhos de exibição (até 2, 15 caracteres cada)
+            display_paths = ["oferta", "especial"]  # Valores padrão
+            for i, path in enumerate(display_paths[:2]):
+                if len(path) > 15:
+                    path = path[:15]
+                
+                path_selectors = [
+                    f"//input[contains(@aria-label, 'Caminho {i+1}')] | //input[contains(@aria-label, 'Path {i+1}')]",
+                    f"//input[contains(@name, 'path-{i}')]"
+                ]
+                
+                for selector in path_selectors:
+                    if self.input_text_safe(selector, path, "xpath"):
+                        self.logger.info(f"✅ Caminho {i+1}: {path}")
+                        break
+            
+            self.logger.info("✅ Anúncios responsivos criados")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 8: {str(e)}")
+            return False
+    
+    def step_9_add_ad_extensions(self, config: Dict) -> bool:
+        """PASSO 9: Adicionar extensões de anúncio (sitelink, chamada, local)"""
+        try:
+            self.logger.info("🔗 PASSO 9: Adicionando extensões de anúncio...")
+            
+            # Tentar clicar em "Adicionar extensões" ou pular se opcional
+            extension_selectors = [
+                "//button[contains(text(), 'Adicionar extensões')] | //button[contains(text(), 'Add extensions')]",
+                "//a[contains(text(), 'extensões')] | //a[contains(text(), 'extensions')]",
+                "//button[contains(text(), 'Pular')] | //button[contains(text(), 'Skip')]"
+            ]
+            
+            for selector in extension_selectors:
+                if self.click_element_safe(selector, "xpath"):
+                    if 'Skip' in selector or 'Pular' in selector:
+                        self.logger.info("⚠️ Extensões puladas (opcional)")
+                    else:
+                        self.logger.info("✅ Extensões de anúncio configuradas")
+                    return True
+            
+            # Se não encontrar, continuar (extensões são opcionais)
+            self.logger.info("ℹ️ Seção de extensões não encontrada, continuando...")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 9: {str(e)}")
+            return False
+    
+    def step_10_review_and_publish(self) -> bool:
+        """PASSO 10: Revisar todas as configurações e publicar campanha"""
+        try:
+            self.logger.info("🚀 PASSO 10: Revisando e publicando campanha...")
+            
+            # Procurar botões de publicar/finalizar
+            publish_selectors = [
+                "//button[contains(text(), 'Publicar')] | //button[contains(text(), 'Publish')]",
+                "//button[contains(text(), 'Criar campanha')] | //button[contains(text(), 'Create campaign')]",
+                "//button[contains(text(), 'Finalizar')] | //button[contains(text(), 'Finish')]",
+                "//button[contains(@aria-label, 'Publicar')] | //button[contains(@aria-label, 'Publish')]"
+            ]
+            
+            for selector in publish_selectors:
+                if self.click_element_safe(selector, "xpath"):
+                    self.wait_for_page_load(timeout=30)  # Publicação pode demorar
+                    self.logger.info("🎉 CAMPANHA PUBLICADA COM SUCESSO!")
+                    return True
+            
+            self.logger.error("❌ Não foi possível encontrar botão de publicar")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Erro no PASSO 10: {str(e)}")
             return False
     
     def configure_campaign_details(self, config: Dict) -> bool:

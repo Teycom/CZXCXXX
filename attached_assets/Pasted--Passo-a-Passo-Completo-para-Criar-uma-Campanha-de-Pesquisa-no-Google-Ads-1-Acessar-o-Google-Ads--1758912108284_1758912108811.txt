@@ -1,0 +1,84 @@
+🧭 Passo a Passo Completo para Criar uma Campanha de Pesquisa no Google Ads
+1. Acessar o Google Ads
+
+Abra o AdsPower e selecione o perfil desejado.
+
+Navegue até o Google Ads e faça login na conta correspondente.
+
+2. Iniciar a Criação da Campanha
+
+Clique no ícone de "Campanhas" no menu lateral.
+
+Clique no botão de adição (+) e selecione "Nova campanha".
+
+3. Escolher o Objetivo da Campanha
+
+Selecione o objetivo principal da campanha, como "Vendas", "Leads" ou "Tráfego do site".
+
+O Google Ads sugerirá o tipo de campanha mais adequado com base no objetivo escolhido.
+
+4. Selecionar o Tipo de Campanha
+
+Escolha "Rede de Pesquisa" para anúncios de texto que aparecem nos resultados de pesquisa do Google.
+
+5. Definir o Nome da Campanha
+
+Dê um nome descritivo à campanha, como "Campanha Pesquisa - [Produto/Serviço] - [Data]".
+
+6. Configurar as Definições da Campanha
+
+Redes: Desmarque "Incluir parceiros de pesquisa do Google" se desejar limitar os anúncios apenas à pesquisa do Google.
+
+Localização: Escolha a localização geográfica onde os anúncios serão exibidos.
+
+Idioma: Selecione o idioma dos usuários que verão os anúncios.
+
+Orçamento: Defina o orçamento diário da campanha.
+
+Estratégia de lances: Escolha uma estratégia de lances, como "Maximizar cliques" ou "CPA desejado".
+
+7. Criar Grupos de Anúncios
+
+Clique em "Adicionar grupo de anúncios".
+
+Dê um nome ao grupo de anúncios.
+
+Palavras-chave: Adicione as palavras-chave relevantes para o grupo de anúncios.
+
+8. Criar Anúncios de Pesquisa Responsivos
+
+Clique em "Criar anúncio".
+
+URL final: Insira o URL da página de destino.
+
+Títulos: Adicione até 15 títulos, cada um com até 30 caracteres.
+
+Descrições: Adicione até 4 descrições, cada uma com até 90 caracteres.
+
+Caminho de exibição: Adicione até 2 caminhos de exibição, cada um com até 15 caracteres.
+
+Fixar textos: Se houver textos que devem aparecer em todas as variações do anúncio, fixe-os em posições específicas. 
+Google Help
+
+9. Adicionar Extensões de Anúncio
+
+Clique em "Adicionar extensões".
+
+Escolha entre extensões de sitelink, de chamada, de local, entre outras, para fornecer informações adicionais aos usuários.
+
+10. Revisar e Publicar a Campanha
+
+Revise todas as configurações e anúncios.
+
+Clique em "Publicar" para ativar a campanha.
+
+📊 Especificações dos Anúncios de Pesquisa
+
+Títulos: Até 15 títulos, cada um com até 30 caracteres.
+
+Descrições: Até 4 descrições, cada uma com até 90 caracteres.
+
+Caminho de exibição: Até 2 caminhos, cada um com até 15 caracteres.
+
+URL final: Até 2048 caracteres. 
+veuno.com
