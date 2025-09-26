@@ -155,7 +155,7 @@ class GoogleAdsAutomation:
             self.logger.debug(f"Erro ao fechar popups: {str(e)}")
             # Não é erro crítico, continua a execução
     
-    def wait_for_page_load(self, timeout: int = None) -> bool:
+    def wait_for_page_load(self, timeout: int | None = None) -> bool:
         """Aguardar carregamento da página"""
         if timeout is None:
             timeout = self.default_timeout or 30
@@ -981,7 +981,7 @@ class GoogleAdsAutomation:
         except Exception as e:
             self.logger.error(f"Erro ao limpar driver: {str(e)}")
     
-    def take_screenshot(self, filename: str = None) -> str:
+    def take_screenshot(self, filename: str | None = None) -> str | None:
         """Tirar screenshot para debugging"""
         try:
             if not self.driver:
