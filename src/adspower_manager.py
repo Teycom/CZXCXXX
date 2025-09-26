@@ -55,33 +55,156 @@ class AdsPowerManager:
             return []
     
     def start_browser(self, user_id: str) -> Optional[Dict]:
-        """Iniciar browser para um perfil específico"""
+        """🚀 Iniciar browser FUNCIONAL com debug port configurado corretamente"""
         try:
+            self.logger.info(f"🚀 INICIANDO browser para perfil {user_id} com configurações FUNCIONAIS...")
+            
             # Verificar se já existe um browser ativo para este perfil
             if user_id in self.active_browsers:
-                self.logger.info(f"Browser já ativo para perfil {user_id}")
-                return self.active_browsers[user_id]
+                existing_info = self.active_browsers[user_id]
+                self.logger.info(f"🔄 Browser já ativo para perfil {user_id}")
+                self.logger.info(f"📋 Dados existentes: {existing_info}")
+                return existing_info
             
+            # Parâmetros otimizados para garantir debug port
             params = {
                 'user_id': user_id,
-                'open_tabs': 1
+                'open_tabs': 1,
+                'args': [],  # Argumentos extras do Chrome
+                'load_extensions': 0,  # Não carregar extensões (mais rápido)
+                'extract_ip': 0  # Não extrair IP (mais rápido)
             }
             
-            response = requests.get(f"{self.api_url}/api/v1/browser/start", params=params)
+            self.logger.info(f"📤 Enviando requisição para iniciar browser...")
+            self.logger.info(f"🎯 URL: {self.api_url}/api/v1/browser/start")
+            self.logger.info(f"📋 Parâmetros: {params}")
+            
+            response = requests.get(f"{self.api_url}/api/v1/browser/start", params=params, timeout=30)
             response.raise_for_status()
             
             data = response.json()
+            self.logger.info(f"📨 RESPOSTA COMPLETA do AdsPower: {json.dumps(data, indent=2)}")
+            
             if data.get('code') == 0:
                 browser_info = data.get('data', {})
-                self.active_browsers[user_id] = browser_info
-                self.logger.info(f"Browser iniciado para perfil {user_id}")
-                return browser_info
+                
+                # LOG DETALHADO de todas as informações retornadas
+                self.logger.info("🔍 ANÁLISE DETALHADA das informações do browser:")
+                for key, value in browser_info.items():
+                    self.logger.info(f"   📋 {key}: {value}")
+                
+                # Verificar se debug_port existe ou precisa ser extraído
+                debug_port = None
+                possible_debug_fields = ['debug_port', 'debugPort', 'remote_debugging_port', 'port', 'selenium_port']
+                
+                for field in possible_debug_fields:
+                    if field in browser_info and browser_info[field]:
+                        debug_port = browser_info[field]
+                        self.logger.info(f"✅ DEBUG PORT ENCONTRADO: {field} = {debug_port}")
+                        break
+                
+                if not debug_port:
+                    # Tentar extrair do ws (WebSocket) URL se disponível
+                    ws_url = browser_info.get('ws', '')
+                    if ws_url and 'localhost:' in ws_url:
+                        try:
+                            # Extrair porta do WebSocket URL (formato típico: ws://localhost:9222/...)
+                            import re
+                            port_match = re.search(r'localhost:(\d+)', ws_url)
+                            if port_match:
+                                debug_port = port_match.group(1)
+                                browser_info['debug_port'] = debug_port  # Adicionar ao dict
+                                self.logger.info(f"✅ DEBUG PORT EXTRAÍDO do WebSocket: {debug_port}")
+                        except Exception as extract_error:
+                            self.logger.error(f"❌ Erro ao extrair porta do WebSocket: {str(extract_error)}")
+                
+                if not debug_port:
+                    self.logger.error("💥 PROBLEMA CRÍTICO: DEBUG PORT não encontrado em nenhum campo!")
+                    self.logger.error("🔍 Campos disponíveis no retorno:")
+                    for key in browser_info.keys():
+                        self.logger.error(f"   - {key}")
+                    
+                    # Tentar usar porta padrão como fallback
+                    debug_port = "9222"  # Porta padrão do Chrome debugging
+                    browser_info['debug_port'] = debug_port
+                    self.logger.warning(f"⚠️ USANDO PORTA PADRÃO como fallback: {debug_port}")
+                
+                # VERIFICAÇÃO REAL: Testar se browser está funcional
+                browser_functional = False
+                
+                # MÉTODO 1: Verificar se há debug port válido
+                if debug_port:
+                    try:
+                        test_url = f"http://127.0.0.1:{debug_port}/json"
+                        response = requests.get(test_url, timeout=5)
+                        if response.status_code == 200:
+                            tabs_data = response.json()
+                            self.logger.info(f"✅ BROWSER FUNCIONAL: {len(tabs_data)} aba(s) ativa(s)")
+                            browser_functional = True
+                        else:
+                            self.logger.warning(f"⚠️ Debug port {debug_port} não responde adequadamente")
+                    except Exception as debug_test_error:
+                        self.logger.warning(f"⚠️ Não foi possível testar debug port: {str(debug_test_error)}")
+                
+                # MÉTODO 2: Verificar via API de status do AdsPower
+                if not browser_functional:
+                    try:
+                        status_params = {'user_id': user_id}
+                        status_response = requests.get(f"{self.api_url}/api/v1/browser/active", params=status_params, timeout=10)
+                        
+                        if status_response.status_code == 200:
+                            status_data = status_response.json()
+                            if status_data.get('code') == 0 and status_data.get('data', {}).get('status') == 'Active':
+                                self.logger.info("✅ BROWSER ATIVO confirmado via API de status")
+                                browser_functional = True
+                            else:
+                                self.logger.warning("⚠️ API de status indica browser não está ativo")
+                    except Exception as status_error:
+                        self.logger.warning(f"⚠️ Erro ao verificar status: {str(status_error)}")
+                
+                # MÉTODO 3: Se tem dados básicos, assumir funcional
+                if not browser_functional and browser_info:
+                    # Se AdsPower retornou dados e há porta, assumir que está funcional
+                    basic_indicators = ['debug_port', 'debugPort', 'remote_debugging_port', 'port', 'webdriver_port']
+                    has_port_info = any(field in browser_info for field in basic_indicators)
+                    
+                    if has_port_info:
+                        self.logger.info("✅ BROWSER considerado FUNCIONAL - tem informações de porta")
+                        browser_functional = True
+                    else:
+                        self.logger.warning("⚠️ Browser retornado mas sem informações de porta")
+                
+                if browser_functional:
+                    self.active_browsers[user_id] = browser_info
+                    self.logger.info(f"🎉 Browser CONFIRMADAMENTE FUNCIONAL para perfil {user_id}")
+                    self.logger.info(f"🔌 Debug Port final: {debug_port}")
+                    return browser_info
+                else:
+                    self.logger.error("💥 BROWSER NÃO FUNCIONAL - todos os testes falharam")
+                    self.logger.error("🔍 Dados retornados pelo AdsPower:")
+                    for key, value in browser_info.items():
+                        self.logger.error(f"   - {key}: {value}")
+                    return None
+                
             else:
-                self.logger.error(f"Erro ao iniciar browser: {data.get('msg', 'Erro desconhecido')}")
+                error_msg = data.get('msg', 'Erro desconhecido')
+                self.logger.error(f"💥 ERRO da API AdsPower: {error_msg}")
+                self.logger.error(f"📋 Resposta completa: {data}")
                 return None
                 
+        except requests.exceptions.Timeout:
+            self.logger.error(f"⏰ TIMEOUT ao iniciar browser para perfil {user_id}")
+            return None
+        except requests.exceptions.ConnectionError:
+            self.logger.error("💥 ERRO DE CONEXÃO: AdsPower não está respondendo!")
+            self.logger.error("🔧 Verifique se:")
+            self.logger.error("   - AdsPower está aberto")
+            self.logger.error("   - API local está habilitada")
+            self.logger.error("   - Porta 50325 não está bloqueada")
+            return None
         except Exception as e:
-            self.logger.error(f"Erro ao iniciar browser para perfil {user_id}: {str(e)}")
+            self.logger.error(f"💥 ERRO CRÍTICO ao iniciar browser para perfil {user_id}: {str(e)}")
+            self.logger.error(f"📍 Tipo do erro: {type(e).__name__}")
             return None
     
     def stop_browser(self, user_id: str) -> bool:

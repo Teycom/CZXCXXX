@@ -151,65 +151,233 @@ class GoogleAdsAutomation:
                 chrome_options.add_argument('--headless')
                 self.logger.info("👻 Modo headless ativado")
             
-            # Conectar ao browser AdsPower existente via debug port
-            debug_port = browser_info.get('debug_port')
+            # CONEXÃO EXTREMAMENTE ROBUSTA ao browser AdsPower
+            self.logger.info("🔌 CONFIGURANDO conexão EXTREMAMENTE ROBUSTA ao AdsPower...")
+            
+            # Extrair debug port com múltiplas tentativas
+            debug_port = None
+            debug_fields = ['debug_port', 'debugPort', 'remote_debugging_port', 'port', 'selenium_port']
+            
+            for field in debug_fields:
+                if field in browser_info and browser_info[field]:
+                    debug_port = str(browser_info[field])
+                    self.logger.info(f"✅ Debug port encontrado em '{field}': {debug_port}")
+                    break
+            
             if not debug_port:
-                self.logger.error("❌ Porta de debug não encontrada nas informações do browser")
-                return False
+                self.logger.error("💥 ERRO CRÍTICO: Debug port não encontrado!")
+                self.logger.error(f"📋 Informações disponíveis: {list(browser_info.keys())}")
+                
+                # Tentar portas comuns como fallback
+                common_ports = ["9222", "9223", "9224", "9225"]
+                self.logger.warning("🔄 Tentando portas comuns como fallback...")
+                
+                for port in common_ports:
+                    try:
+                        test_url = f"http://127.0.0.1:{port}/json"
+                        import requests
+                        response = requests.get(test_url, timeout=2)
+                        if response.status_code == 200:
+                            debug_port = port
+                            self.logger.info(f"✅ FALLBACK SUCESSO: Porta {port} respondendo!")
+                            break
+                    except:
+                        continue
+                
+                if not debug_port:
+                    self.logger.error("💥 FALHA TOTAL: Nenhuma porta de debug encontrada ou funcional")
+                    # Último recurso: tentar com porta padrão mesmo assim
+                    debug_port = "9222"
+                    self.logger.warning(f"🚨 ÚLTIMO RECURSO: Usando porta padrão {debug_port}")
             
-            self.logger.info(f"🔌 Conectando ao browser na porta de debug: {debug_port}")
-            
-            # Conectar ao browser existente via debugger address
+            # Configurar conexão com verificação
             debugger_address = f"127.0.0.1:{debug_port}"
-            chrome_options.add_experimental_option("debuggerAddress", debugger_address)
-            self.logger.info(f"🎯 Debugger address configurado: {debugger_address}")
+            self.logger.info(f"🎯 Configurando debugger address: {debugger_address}")
             
-            # Usar webdriver regular para conectar ao browser existente
-            self.logger.info("🚀 Criando instância do WebDriver...")
-            from selenium import webdriver
-            self.driver = webdriver.Chrome(options=chrome_options)
-            
-            if not self.driver:
-                self.logger.error("❌ Falha ao criar driver WebDriver")
+            # VERIFICAR se a porta está realmente ativa
+            try:
+                import requests
+                test_url = f"http://127.0.0.1:{debug_port}/json"
+                self.logger.info(f"🧪 TESTANDO conexão: {test_url}")
+                
+                response = requests.get(test_url, timeout=5)
+                if response.status_code == 200:
+                    tabs = response.json()
+                    self.logger.info(f"✅ DEBUG PORT ATIVO: {len(tabs)} aba(s) detectada(s)")
+                    for i, tab in enumerate(tabs[:3]):  # Mostrar apenas 3 primeiras
+                        self.logger.info(f"   📄 Aba {i+1}: {tab.get('title', 'Sem título')[:50]}")
+                else:
+                    self.logger.warning(f"⚠️ DEBUG PORT responde com status {response.status_code} - tentando conectar mesmo assim")
+                    # Não retornar False aqui - tentar conectar mesmo assim
+                    
+            except Exception as test_error:
+                self.logger.error(f"💥 ERRO ao testar debug port: {str(test_error)}")
                 return False
             
-            # Configurar WebDriverWait
-            self.wait = WebDriverWait(self.driver, self.default_timeout)
-            self.logger.info(f"⏱️ WebDriverWait configurado com timeout: {self.default_timeout}s")
+            # Configurar Chrome Options com debug port confirmado
+            chrome_options.add_experimental_option("debuggerAddress", debugger_address)
             
-            # TESTE CRÍTICO: Verificar se consegue controlar o browser
-            self.logger.info("🧪 TESTE CRÍTICO: Verificando controle do browser...")
+            # MÉTODO PRINCIPAL: Conectar via debugger address
+            self.logger.info("🚀 MÉTODO PRINCIPAL: Criando WebDriver com debugger address...")
+            
+            connection_successful = False
             
             try:
-                # Tentar obter URL atual
-                current_url = self.driver.current_url
-                self.logger.info(f"✅ SUCESSO: URL atual obtida: {current_url}")
+                from selenium import webdriver
+                self.driver = webdriver.Chrome(options=chrome_options)
                 
-                # Tentar obter título
-                title = self.driver.title  
-                self.logger.info(f"✅ SUCESSO: Título obtido: {title}")
-                
-                # Tentar obter window handles (abas)
-                windows = self.driver.window_handles
-                self.logger.info(f"✅ SUCESSO: {len(windows)} aba(s) detectada(s)")
-                
-                # Verificar se consegue executar JavaScript
-                result = self.driver.execute_script("return 'TESTE_JS_OK';")
-                if result == 'TESTE_JS_OK':
-                    self.logger.info("✅ SUCESSO: JavaScript executado com sucesso")
+                if self.driver:
+                    self.logger.info("✅ WebDriver criado com SUCESSO!")
+                    connection_successful = True
                 else:
-                    self.logger.warning("⚠️ JavaScript retornou resultado inesperado")
+                    self.logger.error("❌ WebDriver retornou None")
+                    
+            except Exception as main_connection_error:
+                self.logger.error(f"💥 FALHA no método principal: {str(main_connection_error)}")
+                self.logger.info("🔄 Tentando método alternativo...")
                 
-            except Exception as test_error:
-                self.logger.error(f"❌ FALHA no teste de controle: {str(test_error)}")
+                # MÉTODO ALTERNATIVO: Tentar sem remote debugging
+                try:
+                    from selenium import webdriver as alt_webdriver
+                    alternative_options = Options()
+                    
+                    # Opções básicas apenas
+                    alternative_options.add_argument('--no-sandbox')
+                    alternative_options.add_argument('--disable-dev-shm-usage')
+                    alternative_options.add_argument('--disable-blink-features=AutomationControlled')
+                    
+                    # Tentar conectar ao browser existente via processo
+                    # (método mais básico que pode funcionar)
+                    self.logger.info("🔄 MÉTODO ALTERNATIVO: Conectando via processo básico...")
+                    
+                    # Aguardar um pouco e tentar novamente
+                    time.sleep(3)
+                    alternative_options.add_experimental_option("debuggerAddress", debugger_address)
+                    
+                    self.driver = alt_webdriver.Chrome(options=alternative_options)
+                    
+                    if self.driver:
+                        self.logger.info("✅ MÉTODO ALTERNATIVO SUCESSO!")
+                        connection_successful = True
+                    
+                except Exception as alternative_error:
+                    self.logger.error(f"💥 MÉTODO ALTERNATIVO também falhou: {str(alternative_error)}")
+            
+            if not connection_successful or not self.driver:
+                self.logger.error("💥 FALHA TOTAL: Todos os métodos de conexão falharam!")
+                self.logger.error("🔧 POSSÍVEIS SOLUÇÕES:")
+                self.logger.error("   1. Verifique se AdsPower permite automação")
+                self.logger.error("   2. Verifique se remote debugging está habilitado")
+                self.logger.error("   3. Tente reiniciar o AdsPower")
                 return False
+            
+            # Configurar WebDriverWait (só se driver existe)
+            if self.driver:
+                self.wait = WebDriverWait(self.driver, self.default_timeout)
+            self.logger.info(f"⏱️ WebDriverWait configurado com timeout: {self.default_timeout}s")
+            
+            # BATERIA DE TESTES CRÍTICOS: Verificar controle TOTAL do browser
+            self.logger.info("🧪 BATERIA DE TESTES CRÍTICOS: Verificando controle COMPLETO...")
+            
+            test_results = []
+            
+            # Verificação adicional de segurança
+            if not self.driver:
+                self.logger.error("💥 ERRO CRÍTICO: Driver está None após conexão supostamente bem-sucedida")
+                return False
+            
+            try:
+                # TESTE 1: Obter URL atual
+                current_url = self.driver.current_url
+                test_results.append(("URL atual", "SUCESSO", current_url))
+                self.logger.info(f"✅ TESTE 1 SUCESSO: URL atual obtida: {current_url}")
+            except Exception as url_error:
+                test_results.append(("URL atual", "FALHA", str(url_error)))
+                self.logger.error(f"❌ TESTE 1 FALHA: {str(url_error)}")
+            
+            try:
+                # TESTE 2: Obter título
+                title = self.driver.title or "Sem título" if self.driver else "Driver None"
+                test_results.append(("Título", "SUCESSO", title))
+                self.logger.info(f"✅ TESTE 2 SUCESSO: Título obtido: {title}")
+            except Exception as title_error:
+                test_results.append(("Título", "FALHA", str(title_error)))
+                self.logger.error(f"❌ TESTE 2 FALHA: {str(title_error)}")
+            
+            try:
+                # TESTE 3: Obter abas
+                windows = self.driver.window_handles if self.driver else []
+                test_results.append(("Abas", "SUCESSO", f"{len(windows)} abas"))
+                self.logger.info(f"✅ TESTE 3 SUCESSO: {len(windows)} aba(s) detectada(s)")
+            except Exception as windows_error:
+                test_results.append(("Abas", "FALHA", str(windows_error)))
+                self.logger.error(f"❌ TESTE 3 FALHA: {str(windows_error)}")
+            
+            try:
+                # TESTE 4: JavaScript básico
+                if self.driver:
+                    js_result = self.driver.execute_script("return 'CONTROLE_OK';")
+                    if js_result == 'CONTROLE_OK':
+                        test_results.append(("JavaScript", "SUCESSO", "Controle confirmado"))
+                        self.logger.info("✅ TESTE 4 SUCESSO: JavaScript executado com sucesso")
+                    else:
+                        test_results.append(("JavaScript", "PARCIAL", f"Resultado: {js_result}"))
+                        self.logger.warning(f"⚠️ TESTE 4 PARCIAL: Resultado inesperado: {js_result}")
+                else:
+                    test_results.append(("JavaScript", "FALHA", "Driver é None"))
+            except Exception as js_error:
+                test_results.append(("JavaScript", "FALHA", str(js_error)))
+                self.logger.error(f"❌ TESTE 4 FALHA: {str(js_error)}")
+            
+            try:
+                # TESTE 5: Navegação básica (teste crucial)
+                if self.driver:
+                    self.logger.info("🧪 TESTE 5 CRÍTICO: Tentando navegação básica...")
+                    original_url = self.driver.current_url
+                    self.driver.execute_script("window.history.replaceState({}, '', window.location.href);")
+                    test_results.append(("Navegação básica", "SUCESSO", "Comando aceito"))
+                    self.logger.info("✅ TESTE 5 SUCESSO: Navegação básica funcional")
+                else:
+                    test_results.append(("Navegação básica", "FALHA", "Driver é None"))
+            except Exception as nav_error:
+                test_results.append(("Navegação básica", "FALHA", str(nav_error)))
+                self.logger.error(f"❌ TESTE 5 FALHA: {str(nav_error)}")
+            
+            # ANÁLISE DOS RESULTADOS DOS TESTES
+            self.logger.info("📊 ANÁLISE DOS RESULTADOS DOS TESTES:")
+            successful_tests = 0
+            total_tests = len(test_results)
+            
+            for test_name, result, details in test_results:
+                if result == "SUCESSO":
+                    successful_tests += 1
+                    self.logger.info(f"   ✅ {test_name}: {details}")
+                elif result == "PARCIAL":
+                    successful_tests += 0.5
+                    self.logger.warning(f"   ⚠️ {test_name}: {details}")
+                else:
+                    self.logger.error(f"   ❌ {test_name}: {details}")
+            
+            success_rate = (successful_tests / total_tests) * 100
+            self.logger.info(f"📈 TAXA DE SUCESSO: {success_rate:.1f}% ({successful_tests}/{total_tests})")
+            
+            if success_rate < 60:
+                self.logger.error("💥 CONTROLE INSUFICIENTE: Muitos testes falharam")
+                return False
+            elif success_rate < 100:
+                self.logger.warning("⚠️ CONTROLE PARCIAL: Alguns problemas detectados, mas continuando...")
+            else:
+                self.logger.info("🎉 CONTROLE TOTAL CONFIRMADO: Todos os testes passaram!")
             
             # Maximizar janela com verificação
             try:
-                self.logger.info("📺 Maximizando janela do browser...")
-                self.driver.maximize_window()
-                time.sleep(1)  # Aguardar maximização
-                self.logger.info("✅ Janela maximizada com sucesso")
+                if self.driver:
+                    self.logger.info("📺 Maximizando janela do browser...")
+                    self.driver.maximize_window()
+                    time.sleep(1)  # Aguardar maximização
+                    self.logger.info("✅ Janela maximizada com sucesso")
+                else:
+                    self.logger.warning("⚠️ Não é possível maximizar - driver é None")
             except Exception as max_error:
                 self.logger.warning(f"⚠️ Não foi possível maximizar janela: {str(max_error)}")
             

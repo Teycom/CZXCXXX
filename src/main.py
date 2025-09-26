@@ -961,16 +961,20 @@ class GoogleAdsCampaignBot:
                         self.logger.error(f"Falha ao iniciar browser para perfil: {profile['name']}")
                         continue
                     
-                    # 2. Aguardar browser inicializar
+                    # 2. Aguardar browser inicializar e LOG DETALHADO
+                    self.logger.info(f"📋 INFORMAÇÕES DETALHADAS do browser: {browser_info}")
                     time.sleep(5)
                     
-                    # 3. Executar automação para este perfil
+                    # 3. EXECUTAR AUTOMAÇÃO com logs detalhados
+                    self.logger.info(f"🚀 INICIANDO automação para perfil: {profile['name']}")
                     success = self.automation.create_campaign_with_browser(profile, config, browser_info)
+                    self.logger.info(f"📊 RESULTADO da automação: {'SUCESSO' if success else 'FALHA'}")
                     
                     if success:
-                        self.logger.info(f"✅ Campanha criada com sucesso no perfil: {profile['name']}")
+                        self.logger.info(f"🎉 SUCESSO TOTAL: Campanha criada no perfil: {profile['name']}")
                     else:
-                        self.logger.error(f"❌ Falha ao criar campanha no perfil: {profile['name']}")
+                        self.logger.error(f"💥 FALHA CRÍTICA: Não foi possível criar campanha no perfil: {profile['name']}")
+                        self.logger.error(f"🔍 Verifique os logs detalhados acima para identificar o problema")
                         
                 except Exception as e:
                     self.logger.error(f"❌ Erro no perfil {profile['name']}: {str(e)}")
