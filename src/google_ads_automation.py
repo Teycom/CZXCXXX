@@ -98,11 +98,13 @@ class GoogleAdsAutomation:
         """Navegar para o Google Ads"""
         try:
             # URL correta do Google Ads conforme especificado
-            self.driver.get("https://ads.google.com/aw/")
+            if self.driver:
+                self.driver.get("https://ads.google.com/aw/")
             time.sleep(self.default_delay)
             
             # Verificar se chegou na página correta
-            self.wait.until(lambda d: "ads.google.com" in d.current_url.lower())
+            if self.wait:
+                self.wait.until(lambda d: "ads.google.com" in d.current_url.lower())
             
             # Fechar popups que podem aparecer
             self.close_popups()
@@ -159,7 +161,8 @@ class GoogleAdsAutomation:
             timeout = self.default_timeout
         
         try:
-            WebDriverWait(self.driver, timeout).until(
+            if self.driver:
+                WebDriverWait(self.driver, timeout).until(
                 lambda driver: driver.execute_script("return document.readyState") == "complete"
             )
             time.sleep(2)  # Aguardar um pouco mais para elementos dinâmicos
@@ -373,22 +376,34 @@ class GoogleAdsAutomation:
             return False
     
     def step_3_choose_campaign_objective(self, config: Dict) -> bool:
-        """PASSO 3: Escolher o objetivo da campanha (Vendas, Leads, Tráfego do site)"""
+        """PASSO 3: Escolher o objetivo da campanha - PRIORIZAR 'sem orientação de objetivo' conforme instrução"""
         try:
-            self.logger.info("🎯 PASSO 3: Escolhendo objetivo da campanha...")
+            self.logger.info("🎯 PASSO 3: Escolhendo objetivo da campanha (priorizando sem orientação)...")
             
-            # Objetivos possíveis conforme documento
-            objective_selectors = [
-                "//div[contains(text(), 'Vendas')] | //div[contains(text(), 'Sales')]",
-                "//div[contains(text(), 'Leads')] | //div[contains(text(), 'Leads')]", 
-                "//div[contains(text(), 'Tráfego do website')] | //div[contains(text(), 'Website traffic')]",
-                "//button[contains(text(), 'Criar campanha sem orientação de objetivo')] | //button[contains(text(), 'Create campaign without goal guidance')]"
+            # PRIORIDADE: Criar campanha sem orientação de objetivo (conforme instrução do usuário)
+            priority_selectors = [
+                "//button[contains(text(), 'Criar campanha sem orientação de objetivo')] | //button[contains(text(), 'Create campaign without goal guidance')]",
+                "//div[contains(text(), 'sem orientação')] | //div[contains(text(), 'without goal')]",
+                "//a[contains(text(), 'sem orientação')] | //a[contains(text(), 'without goal')]"
             ]
             
-            # Tentar clicar em um objetivo (prioridade: Vendas > Leads > Tráfego > Sem objetivo)
-            for selector in objective_selectors:
+            # Primeiro tentar a opção sem orientação
+            for selector in priority_selectors:
                 if self.click_element_safe(selector):
-                    self.logger.info("✅ Objetivo da campanha selecionado")
+                    self.logger.info("✅ Campanha sem orientação de objetivo selecionada (PRIORIDADE)")
+                    self.wait_for_page_load()
+                    return True
+            
+            # Se não encontrar a opção sem orientação, usar objetivos tradicionais como fallback
+            fallback_selectors = [
+                "//div[contains(text(), 'Vendas')] | //div[contains(text(), 'Sales')]",
+                "//div[contains(text(), 'Leads')] | //div[contains(text(), 'Leads')]", 
+                "//div[contains(text(), 'Tráfego do website')] | //div[contains(text(), 'Website traffic')]"
+            ]
+            
+            for selector in fallback_selectors:
+                if self.click_element_safe(selector):
+                    self.logger.info("✅ Objetivo da campanha selecionado (fallback)")
                     self.wait_for_page_load()
                     return True
             
@@ -426,11 +441,16 @@ class GoogleAdsAutomation:
             return False
     
     def step_5_define_campaign_name(self, config: Dict) -> bool:
-        """PASSO 5: Definir nome descritivo da campanha"""
+        """PASSO 5: Definir nome descritivo da campanha - PULA se não estiver preenchido"""
         try:
             self.logger.info("📝 PASSO 5: Definindo nome da campanha...")
             
-            campaign_name = config.get('campaign_name', 'Campanha Pesquisa - Nova Campanha')
+            campaign_name = config.get('campaign_name', '').strip()
+            
+            # SE NÃO ESTIVER PREENCHIDO, PULAR (conforme instrução)
+            if not campaign_name:
+                self.logger.info("⚠️ Nome da campanha não preenchido - PULANDO PASSO 5")
+                return True  # Continua mesmo sem preencher
             
             name_selectors = [
                 "//input[contains(@aria-label, 'nome')] | //input[contains(@aria-label, 'name')]",
@@ -444,12 +464,12 @@ class GoogleAdsAutomation:
                     self.logger.info(f"✅ Nome da campanha definido: {campaign_name}")
                     return True
             
-            self.logger.error("❌ Não foi possível inserir nome da campanha")
-            return False
+            self.logger.warning("⚠️ Não foi possível inserir nome da campanha, mas continuando...")
+            return True  # Não falha, apenas continua
             
         except Exception as e:
             self.logger.error(f"Erro no PASSO 5: {str(e)}")
-            return False
+            return True  # Continua mesmo com erro
     
     def step_6_configure_campaign_settings(self, config: Dict) -> bool:
         """PASSO 6: Configurar definições da campanha (redes, localização, idioma, orçamento, lances)"""
@@ -508,18 +528,21 @@ class GoogleAdsAutomation:
                 if self.input_text_safe(selector, language, "xpath"):
                     break
             
-            # 6.4: Configurar orçamento diário
-            budget = config.get('budget', '50')
-            budget_selectors = [
-                "//input[contains(@aria-label, 'orçamento')] | //input[contains(@aria-label, 'budget')]",
-                "//input[contains(@placeholder, 'orçamento')] | //input[contains(@placeholder, 'budget')]",
-                "//input[@type='number'][contains(@name, 'budget')]"
-            ]
-            
-            for selector in budget_selectors:
-                if self.input_text_safe(selector, budget, "xpath"):
-                    self.logger.info(f"✅ Orçamento definido: R$ {budget}")
-                    break
+            # 6.4: Configurar orçamento diário - PULA se não preenchido
+            budget = config.get('budget', '').strip()
+            if budget:  # Só configura se estiver preenchido
+                budget_selectors = [
+                    "//input[contains(@aria-label, 'orçamento')] | //input[contains(@aria-label, 'budget')]",
+                    "//input[contains(@placeholder, 'orçamento')] | //input[contains(@placeholder, 'budget')]",
+                    "//input[@type='number'][contains(@name, 'budget')]"
+                ]
+                
+                for selector in budget_selectors:
+                    if self.input_text_safe(selector, budget, "xpath"):
+                        self.logger.info(f"✅ Orçamento definido: R$ {budget}")
+                        break
+            else:
+                self.logger.info("⚠️ Orçamento não preenchido - PULANDO configuração de orçamento")
             
             # 6.5: Configurar estratégia de lances (Maximizar cliques por padrão)
             bidding_selectors = [
@@ -608,8 +631,8 @@ class GoogleAdsAutomation:
         try:
             self.logger.info("📝 PASSO 8: Criando anúncios de pesquisa responsivos...")
             
-            # 8.1: URL final (obrigatório)
-            landing_url = config.get('landing_url', '')
+            # 8.1: URL final - PULA se não preenchido (conforme instrução)
+            landing_url = config.get('landing_url', '').strip()
             if landing_url:
                 url_selectors = [
                     "//input[contains(@aria-label, 'URL')] | //input[contains(@aria-label, 'url')]",
@@ -621,11 +644,17 @@ class GoogleAdsAutomation:
                     if self.input_text_safe(selector, landing_url, "xpath"):
                         self.logger.info(f"✅ URL final definida: {landing_url}")
                         break
+            else:
+                self.logger.info("⚠️ URL final não preenchida - PULANDO configuração de URL")
             
-            # 8.2: Títulos (até 15, máximo 30 caracteres cada)
+            # 8.2: Títulos (até 15, máximo 30 caracteres cada) - PULA se não preenchido
             ad_titles = config.get('ad_titles', [])
-            if ad_titles:
+            if ad_titles and any(title.strip() for title in ad_titles):  # Verifica se tem títulos preenchidos
                 for i, title in enumerate(ad_titles[:15]):  # Máximo 15 títulos
+                    title = title.strip()
+                    if not title:  # Pula títulos vazios
+                        continue
+                        
                     if len(title) > 30:
                         title = title[:30]  # Máximo 30 caracteres
                     
@@ -639,11 +668,17 @@ class GoogleAdsAutomation:
                         if self.input_text_safe(selector, title, "xpath"):
                             self.logger.info(f"✅ Título {i+1}: {title}")
                             break
+            else:
+                self.logger.info("⚠️ Títulos não preenchidos - PULANDO configuração de títulos")
             
-            # 8.3: Descrições (até 4, máximo 90 caracteres cada)
+            # 8.3: Descrições (até 4, máximo 90 caracteres cada) - PULA se não preenchido
             ad_descriptions = config.get('ad_descriptions', [])
-            if ad_descriptions:
+            if ad_descriptions and any(desc.strip() for desc in ad_descriptions):  # Verifica se tem descrições preenchidas
                 for i, description in enumerate(ad_descriptions[:4]):  # Máximo 4 descrições
+                    description = description.strip()
+                    if not description:  # Pula descrições vazias
+                        continue
+                        
                     if len(description) > 90:
                         description = description[:90]  # Máximo 90 caracteres
                     
@@ -657,6 +692,8 @@ class GoogleAdsAutomation:
                         if self.input_text_safe(selector, description, "xpath"):
                             self.logger.info(f"✅ Descrição {i+1}: {description}")
                             break
+            else:
+                self.logger.info("⚠️ Descrições não preenchidas - PULANDO configuração de descrições")
             
             # 8.4: Caminhos de exibição (até 2, 15 caracteres cada)
             display_paths = ["oferta", "especial"]  # Valores padrão

@@ -1,0 +1,66 @@
+vou te mandar alguns links de instruções do google ads para vc ver se nao ta faltando nada no nosso prompt:
+
+2. Iniciar a Criação da Campanha
+
+Ação: No painel do Google Ads, clique no ícone de "Campanhas" no menu lateral.
+
+Ação: Clique no botão de adição (+) e selecione "Nova campanha".
+
+Link: https://support.google.com/google-ads/answer/6324971
+
+3. Escolher o Objetivo da Campanha
+
+Ação: Selecione o objetivo principal da campanha, como "Vendas", "Leads" ou "Tráfego do site".
+
+Link: https://support.google.com/google-ads/answer/6324971
+
+4. Selecionar o Tipo de Campanha
+
+Ação: Escolha "Rede de Pesquisa" para anúncios de texto que aparecem nos resultados de pesquisa do Google.
+
+Link: https://support.google.com/google-ads/answer/6324971
+
+ele tem que criar campanha sem orientação...
+
+5. Definir o Nome da Campanha
+
+Ação: Dê um nome descritivo à campanha, como "Campanha Pesquisa - [Produto/Serviço] - [Data]".
+
+6. Configurar as Definições da Campanha
+
+Redes: Desmarque "Incluir parceiros de pesquisa do Google" se desejar limitar os anúncios apenas à pesquisa do Google.
+
+Localização: Escolha a localização geográfica onde os anúncios serão exibidos.
+
+Idioma: Selecione o idioma dos usuários que verão os anúncios.
+
+Orçamento: Defina o orçamento diário da campanha.
+
+Estratégia de lances: Escolha uma estratégia de lances, como "Maximizar cliques" ou "CPA desejado".
+
+Link: https://support.google.com/google-ads/answer/6324971
+
+7. Criar Grupos de Anúncios
+
+Ação: Clique em "Adicionar grupo de anúncios".
+
+Ação: Dê um nome ao grupo de anúncios.
+
+Palavras-chave: Adicione as palavras-chave relevantes para o grupo de anúncios.
+
+Link: https://support.google.com/google-ads/answer/6324971
+
+8. Criar Anúncios de Pesquisa Responsivos
+
+Ação: Clique em "Criar anúncio".
+
+URL final: Insira o URL da página de destino.
+
+Títulos: Adicione até 15 títulos, cada um com até 30 caracteres.
+
+Descrições: Adicione até 4 descrições, cada uma com até 90 caracteres.
+
+Caminho de exibição: Adicione até 2 caminhos de exibição, cada um com até 15 caracteres.
+
+Link: https://support.google.com/google-ads/answer/7684791
+e se as informações n tiverem completadas pelo o usuario no nosso apk, o nosso bot só pula:
