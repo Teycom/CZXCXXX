@@ -158,7 +158,7 @@ class GoogleAdsAutomation:
     def wait_for_page_load(self, timeout: int = None) -> bool:
         """Aguardar carregamento da página"""
         if timeout is None:
-            timeout = self.default_timeout
+            timeout = self.default_timeout or 30
         
         try:
             if self.driver:
@@ -174,6 +174,9 @@ class GoogleAdsAutomation:
     def click_element_safe(self, selector: str, by_type: str = "xpath") -> bool:
         """Clicar em elemento com tratamento de erro"""
         try:
+            if not self.wait or not self.driver:
+                return False
+                
             if by_type == "xpath":
                 element = self.wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
             else:
@@ -198,6 +201,9 @@ class GoogleAdsAutomation:
     def input_text_safe(self, selector: str, text: str, by_type: str = "css") -> bool:
         """Inserir texto em campo com tratamento de erro"""
         try:
+            if not self.wait or not self.driver:
+                return False
+                
             if by_type == "xpath":
                 element = self.wait.until(EC.presence_of_element_located((By.XPATH, selector)))
             else:
@@ -376,40 +382,33 @@ class GoogleAdsAutomation:
             return False
     
     def step_3_choose_campaign_objective(self, config: Dict) -> bool:
-        """PASSO 3: Escolher o objetivo da campanha - PRIORIZAR 'sem orientação de objetivo' conforme instrução"""
+        """PASSO 3: Escolher objetivo - APENAS os 4 que suportam campanha de pesquisa"""
         try:
-            self.logger.info("🎯 PASSO 3: Escolhendo objetivo da campanha (priorizando sem orientação)...")
+            self.logger.info("🎯 PASSO 3: Escolhendo objetivo (apenas os que suportam pesquisa)...")
             
-            # PRIORIDADE: Criar campanha sem orientação de objetivo (conforme instrução do usuário)
-            priority_selectors = [
-                "//button[contains(text(), 'Criar campanha sem orientação de objetivo')] | //button[contains(text(), 'Create campaign without goal guidance')]",
-                "//div[contains(text(), 'sem orientação')] | //div[contains(text(), 'without goal')]",
-                "//a[contains(text(), 'sem orientação')] | //a[contains(text(), 'without goal')]"
-            ]
-            
-            # Primeiro tentar a opção sem orientação
-            for selector in priority_selectors:
-                if self.click_element_safe(selector):
-                    self.logger.info("✅ Campanha sem orientação de objetivo selecionada (PRIORIDADE)")
-                    self.wait_for_page_load()
-                    return True
-            
-            # Se não encontrar a opção sem orientação, usar objetivos tradicionais como fallback
-            fallback_selectors = [
+            # APENAS os 4 objetivos que suportam campanha de pesquisa (conforme esclarecimento)
+            search_campaign_objectives = [
+                # PRIORIDADE: Sem orientação (conforme instrução anterior)
+                "//button[contains(text(), 'Criar campanha sem orientação')] | //button[contains(text(), 'Create campaign without goal')] | //button[contains(text(), 'sem orientação')] | //button[contains(text(), 'without goal')]",
+                "//div[contains(text(), 'sem orientação')] | //div[contains(text(), 'without goal')] | //div[contains(text(), 'Criar campanha sem orientação')]",
+                
+                # Os 3 objetivos específicos que suportam pesquisa
                 "//div[contains(text(), 'Vendas')] | //div[contains(text(), 'Sales')]",
                 "//div[contains(text(), 'Leads')] | //div[contains(text(), 'Leads')]", 
-                "//div[contains(text(), 'Tráfego do website')] | //div[contains(text(), 'Website traffic')]"
+                "//div[contains(text(), 'Tráfego do site')] | //div[contains(text(), 'Website traffic')] | //div[contains(text(), 'Tráfego do website')]"
             ]
             
-            for selector in fallback_selectors:
+            # Tentar cada objetivo (prioridade: sem orientação → vendas → leads → tráfego)
+            for i, selector in enumerate(search_campaign_objectives):
                 if self.click_element_safe(selector):
-                    self.logger.info("✅ Objetivo da campanha selecionado (fallback)")
+                    objective_names = ["Sem orientação", "Vendas", "Leads", "Tráfego do site"]
+                    self.logger.info(f"✅ Objetivo selecionado: {objective_names[min(i, len(objective_names)-1)]}")
                     self.wait_for_page_load()
                     return True
             
-            # Se nenhum objetivo foi encontrado, continuar (talvez não seja necessário)
-            self.logger.info("ℹ️ Nenhum objetivo específico encontrado, continuando...")
-            return True
+            # Se nenhum dos 4 objetivos foi encontrado, não é possível criar campanha de pesquisa
+            self.logger.warning("⚠️ Nenhum dos 4 objetivos que suportam pesquisa foi encontrado")
+            return True  # Continua mesmo assim para tentar
             
         except Exception as e:
             self.logger.error(f"Erro no PASSO 3: {str(e)}")
@@ -485,12 +484,13 @@ class GoogleAdsAutomation:
             
             for selector in search_partners_selectors:
                 try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    if element.is_selected():
-                        element.click()
-                        self.logger.info("✅ Desmarcou parceiros de pesquisa")
-                        time.sleep(1)
-                        break
+                    if self.driver:
+                        element = self.driver.find_element(By.XPATH, selector)
+                        if element.is_selected():
+                            element.click()
+                            self.logger.info("✅ Desmarcou parceiros de pesquisa")
+                            time.sleep(1)
+                            break
                 except:
                     continue
             
@@ -511,8 +511,9 @@ class GoogleAdsAutomation:
                         # Aguardar sugestões e selecionar primeira
                         time.sleep(2)
                         try:
-                            suggestion = self.driver.find_element(By.XPATH, "//div[contains(@class, 'suggestion')] | //li[contains(@role, 'option')]")
-                            suggestion.click()
+                            if self.driver:
+                                suggestion = self.driver.find_element(By.XPATH, "//div[contains(@class, 'suggestion')] | //li[contains(@role, 'option')]")
+                                suggestion.click()
                         except:
                             pass
                         break
@@ -815,8 +816,9 @@ class GoogleAdsAutomation:
                         time.sleep(2)
                         # Pressionar Enter ou clicar na primeira sugestão
                         try:
-                            suggestion = self.driver.find_element(By.XPATH, "//div[contains(@class, 'suggestion')]")
-                            suggestion.click()
+                            if self.driver:
+                                suggestion = self.driver.find_element(By.XPATH, "//div[contains(@class, 'suggestion')]")
+                                suggestion.click()
                         except:
                             pass
                         break
