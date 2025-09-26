@@ -208,76 +208,20 @@ class GoogleAdsAutomation:
             self.logger.info(f"🎯 Configurando debuggerAddress: {debugger_address}")
             chrome_options.add_experimental_option("debuggerAddress", debugger_address)
             
-            # 🔧 CORREÇÃO 2 CORRIGIDA: Usar ChromeDriver do AdsPower primeiro
-            self.logger.info("🚀 Criando WebDriver com ChromeDriver CORRETO...")
+            # 🔧 CORREÇÃO REAL: Sistema inteligente de múltiplas versões e browsers
+            browser_type = browser_info.get('browser_type', 'chrome').lower()
+            self.logger.info(f"🌐 Tipo de browser detectado: {browser_type}")
             
-            driver_created = False
+            if browser_type == 'firefox':
+                driver_created = self._setup_firefox_driver(browser_info, chrome_options)
+            else:
+                driver_created = self._setup_chrome_driver_smart(browser_info, chrome_options)
             
-            # PRIMEIRA TENTATIVA: ChromeDriver fornecido pelo AdsPower
-            if 'webdriver' in browser_info:
-                try:
-                    adspower_driver_path = browser_info['webdriver']
-                    self.logger.info(f"📍 Tentativa 1: ChromeDriver do AdsPower: {adspower_driver_path}")
-                    
-                    # Verificar se arquivo existe
-                    import os
-                    if os.path.exists(adspower_driver_path):
-                        from selenium import webdriver
-                        from selenium.webdriver.chrome.service import Service
-                        
-                        service = Service(adspower_driver_path)
-                        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                        
-                        if self.driver:
-                            self.logger.info("✅ SUCESSO: ChromeDriver do AdsPower funcionou!")
-                            driver_created = True
-                    else:
-                        self.logger.warning(f"⚠️ ChromeDriver do AdsPower não existe: {adspower_driver_path}")
-                        
-                except Exception as adspower_error:
-                    self.logger.warning(f"⚠️ ChromeDriver do AdsPower falhou: {str(adspower_error)}")
-            
-            # SEGUNDA TENTATIVA: ChromeDriver do PATH (se AdsPower falhou)
-            if not driver_created:
-                try:
-                    from selenium import webdriver
-                    self.logger.info("📍 Tentativa 2: ChromeDriver do PATH...")
-                    self.driver = webdriver.Chrome(options=chrome_options)
-                    
-                    if self.driver:
-                        self.logger.info("✅ SUCESSO: ChromeDriver do PATH funcionou!")
-                        driver_created = True
-                        
-                except Exception as path_error:
-                    self.logger.warning(f"⚠️ ChromeDriver do PATH falhou: {str(path_error)}")
-            
-            # TERCEIRA TENTATIVA: Instalar automaticamente (último recurso)
-            if not driver_created:
-                try:
-                    self.logger.info("📍 Tentativa 3: ÚLTIMO RECURSO - Instalando ChromeDriver...")
-                    from selenium import webdriver
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    from selenium.webdriver.chrome.service import Service
-                    
-                    self.logger.warning("⚠️ ATENÇÃO: Pode haver incompatibilidade de versão!")
-                    driver_path = ChromeDriverManager().install()
-                    service = Service(driver_path)
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    
-                    if self.driver:
-                        self.logger.info("✅ ÚLTIMO RECURSO funcionou (pode ser instável)")
-                        driver_created = True
-                        
-                except Exception as install_error:
-                    self.logger.error(f"💥 ÚLTIMO RECURSO falhou: {str(install_error)}")
+            # Sistema inteligente implementado acima
             
             if not driver_created or not self.driver:
-                self.logger.error("💥 FALHA CRÍTICA: Todas as tentativas de ChromeDriver falharam!")
-                self.logger.error("🔧 DIAGNÓSTICO:")
-                self.logger.error("   1. ChromeDriver do AdsPower não encontrado ou incompatível")
-                self.logger.error("   2. ChromeDriver do PATH não disponível")
-                self.logger.error("   3. webdriver_manager também falhou")
-                self.logger.error(f"📋 Dados do browser: {browser_info}")
+                self.logger.error("💥 FALHA TOTAL: Sistema inteligente não conseguiu configurar WebDriver!")
+                self.logger.error("🔧 PROBLEMA: Múltiplas tentativas falharam (Chrome + Firefox)")
                 return False
             
             # 🔧 CORREÇÃO 3: WebDriverWait com verificação OBRIGATÓRIA
@@ -1783,3 +1727,269 @@ class GoogleAdsAutomation:
         
         self.logger.error(f"💥 FALHA COMPLETA após {max_attempts} tentativas: {description}")
         return False
+    
+    def _setup_chrome_driver_smart(self, browser_info: Dict, options) -> bool:
+        """🎯 Sistema inteligente para configurar ChromeDriver com múltiplas versões"""
+        self.logger.info("🎯 INICIANDO sistema inteligente de ChromeDriver...")
+        
+        # Detectar versão do Chrome no browser do AdsPower
+        chrome_version = self._detect_chrome_version(browser_info)
+        self.logger.info(f"🔍 Versão do Chrome detectada: {chrome_version}")
+        
+        # Lista de tentativas de configuração em ordem de prioridade
+        setup_attempts = [
+            ("AdsPower WebDriver", lambda: self._try_adspower_chromedriver(browser_info, options)),
+            ("PATH ChromeDriver", lambda: self._try_path_chromedriver(options)),
+            ("Versão Específica", lambda: self._try_specific_version_chromedriver(chrome_version, options)),
+            ("Versões Múltiplas", lambda: self._try_multiple_versions_chromedriver(options)),
+            ("Último Recurso", lambda: self._try_latest_chromedriver(options))
+        ]
+        
+        # Tentar cada método até conseguir
+        for method_name, setup_method in setup_attempts:
+            self.logger.info(f"📍 Tentando: {method_name}")
+            try:
+                if setup_method():
+                    self.logger.info(f"✅ SUCESSO com {method_name}!")
+                    return True
+                else:
+                    self.logger.warning(f"⚠️ {method_name} falhou")
+            except Exception as e:
+                self.logger.warning(f"⚠️ {method_name} erro: {str(e)}")
+        
+        return False
+    
+    def _detect_chrome_version(self, browser_info: Dict) -> str:
+        """🔍 Detectar versão do Chrome no AdsPower"""
+        try:
+            # Método 1: Verificar se AdsPower retorna versão
+            for key in ['chrome_version', 'browser_version', 'version']:
+                if key in browser_info:
+                    version = browser_info[key]
+                    self.logger.info(f"✅ Versão do Chrome encontrada: {version}")
+                    return version
+            
+            # Método 2: Tentar obter via debugger port
+            debugger_address = browser_info.get('debugger_address')
+            if debugger_address:
+                import requests
+                try:
+                    version_url = f"http://{debugger_address}/json/version"
+                    response = requests.get(version_url, timeout=5)
+                    if response.status_code == 200:
+                        version_data = response.json()
+                        browser_str = version_data.get('Browser', '')
+                        # Extrair versão (ex: "Chrome/120.0.6099.109")
+                        import re
+                        match = re.search(r'Chrome/(\d+\.\d+)', browser_str)
+                        if match:
+                            version = match.group(1)
+                            self.logger.info(f"✅ Versão do Chrome via API: {version}")
+                            return version
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Erro ao detectar versão via API: {str(e)}")
+            
+            # Método 3: Fallback para versão comum
+            self.logger.warning("⚠️ Não foi possível detectar versão específica, usando padrão")
+            return "120.0"  # Versão comum recente
+            
+        except Exception as e:
+            self.logger.error(f"💥 Erro ao detectar versão do Chrome: {str(e)}")
+            return "120.0"
+    
+    def _try_adspower_chromedriver(self, browser_info: Dict, options) -> bool:
+        """🔧 Tentar usar ChromeDriver fornecido pelo AdsPower"""
+        try:
+            if 'webdriver' not in browser_info:
+                return False
+                
+            driver_path = browser_info['webdriver']
+            import os
+            if not os.path.exists(driver_path):
+                self.logger.warning(f"⚠️ ChromeDriver do AdsPower não existe: {driver_path}")
+                return False
+            
+            from selenium import webdriver
+            from selenium.webdriver.chrome.service import Service
+            
+            service = Service(driver_path)
+            self.driver = webdriver.Chrome(service=service, options=options)
+            return self.driver is not None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Falha ChromeDriver AdsPower: {str(e)}")
+            return False
+    
+    def _try_path_chromedriver(self, options) -> bool:
+        """🔧 Tentar usar ChromeDriver do PATH"""
+        try:
+            from selenium import webdriver
+            self.driver = webdriver.Chrome(options=options)
+            return self.driver is not None
+        except Exception as e:
+            self.logger.warning(f"⚠️ Falha ChromeDriver PATH: {str(e)}")
+            return False
+    
+    def _try_specific_version_chromedriver(self, chrome_version: str, options) -> bool:
+        """🔧 Tentar instalar ChromeDriver de versão específica"""
+        try:
+            from selenium import webdriver
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium.webdriver.chrome.service import Service
+            
+            # Extrair major version (ex: "120.0" -> "120")
+            major_version = chrome_version.split('.')[0]
+            self.logger.info(f"🎯 Instalando ChromeDriver para versão {major_version}")
+            
+            # Tentar versão específica (webdriver_manager pode não aceitar version específica)
+            try:
+                driver_path = ChromeDriverManager().install()
+            except:
+                # Fallback para download direto se disponível
+                driver_path = ChromeDriverManager().install()
+            service = Service(driver_path)
+            self.driver = webdriver.Chrome(service=service, options=options)
+            return self.driver is not None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Falha versão específica: {str(e)}")
+            return False
+    
+    def _try_multiple_versions_chromedriver(self, options) -> bool:
+        """🔧 Tentar múltiplas versões de ChromeDriver"""
+        common_versions = ["120", "119", "118", "117", "116", "115", "114", "113"]
+        
+        for version in common_versions:
+            try:
+                self.logger.info(f"🔄 Tentando versão {version}...")
+                from selenium import webdriver
+                from webdriver_manager.chrome import ChromeDriverManager
+                from selenium.webdriver.chrome.service import Service
+                
+                driver_path = ChromeDriverManager().install()
+                service = Service(driver_path)
+                self.driver = webdriver.Chrome(service=service, options=options)
+                
+                if self.driver:
+                    self.logger.info(f"✅ SUCESSO com versão {version}!")
+                    return True
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Versão {version} falhou: {str(e)}")
+                continue
+        
+        return False
+    
+    def _try_latest_chromedriver(self, options) -> bool:
+        """🔧 Última tentativa: ChromeDriver mais recente"""
+        try:
+            from selenium import webdriver
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium.webdriver.chrome.service import Service
+            
+            self.logger.warning("⚠️ ÚLTIMA TENTATIVA: ChromeDriver mais recente")
+            driver_path = ChromeDriverManager().install()
+            service = Service(driver_path)
+            self.driver = webdriver.Chrome(service=service, options=options)
+            return self.driver is not None
+            
+        except Exception as e:
+            self.logger.error(f"💥 Última tentativa falhou: {str(e)}")
+            return False
+    
+    def _setup_firefox_driver(self, browser_info: Dict, chrome_options) -> bool:
+        """🦊 Configurar Firefox WebDriver para perfis Firefox do AdsPower"""
+        self.logger.info("🦊 CONFIGURANDO Firefox WebDriver...")
+        
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.firefox.options import Options as FirefoxOptions
+            from selenium.webdriver.firefox.service import Service as FirefoxService
+            
+            # Configurar opções do Firefox
+            firefox_options = FirefoxOptions()
+            
+            # Transferir configurações relevantes do chrome_options para firefox
+            if hasattr(chrome_options, 'headless') and chrome_options.headless:
+                firefox_options.add_argument('--headless')
+            
+            # Configurar debugging port se disponível
+            debugger_address = browser_info.get('debugger_address')
+            if debugger_address:
+                host, port = debugger_address.split(':')
+                firefox_options.set_preference("devtools.debugger.remote-enabled", True)
+                firefox_options.set_preference("devtools.debugger.remote-port", int(port))
+                firefox_options.add_argument(f"--marionette-port={port}")
+            
+            # Tentativas de configuração do Firefox
+            firefox_attempts = [
+                ("AdsPower GeckoDriver", lambda: self._try_adspower_geckodriver(browser_info, firefox_options)),
+                ("PATH GeckoDriver", lambda: self._try_path_geckodriver(firefox_options)),
+                ("Auto-Install GeckoDriver", lambda: self._try_auto_install_geckodriver(firefox_options))
+            ]
+            
+            for method_name, setup_method in firefox_attempts:
+                self.logger.info(f"📍 Firefox: {method_name}")
+                try:
+                    if setup_method():
+                        self.logger.info(f"✅ SUCESSO Firefox: {method_name}!")
+                        return True
+                    else:
+                        self.logger.warning(f"⚠️ Firefox {method_name} falhou")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Firefox {method_name} erro: {str(e)}")
+            
+            return False
+            
+        except ImportError:
+            self.logger.error("💥 Selenium Firefox não está disponível")
+            return False
+        except Exception as e:
+            self.logger.error(f"💥 Erro ao configurar Firefox: {str(e)}")
+            return False
+    
+    def _try_adspower_geckodriver(self, browser_info: Dict, options) -> bool:
+        """🔧 Tentar usar GeckoDriver do AdsPower"""
+        try:
+            # AdsPower pode fornecer geckodriver similar ao chromedriver
+            geckodriver_path = browser_info.get('geckodriver', browser_info.get('webdriver'))
+            if not geckodriver_path:
+                return False
+                
+            import os
+            if not os.path.exists(geckodriver_path):
+                return False
+            
+            from selenium import webdriver
+            from selenium.webdriver.firefox.service import Service as FirefoxService
+            
+            service = FirefoxService(geckodriver_path)
+            self.driver = webdriver.Firefox(service=service, options=options)
+            return self.driver is not None
+            
+        except Exception:
+            return False
+    
+    def _try_path_geckodriver(self, options) -> bool:
+        """🔧 Tentar usar GeckoDriver do PATH"""
+        try:
+            from selenium import webdriver
+            self.driver = webdriver.Firefox(options=options)
+            return self.driver is not None
+        except Exception:
+            return False
+    
+    def _try_auto_install_geckodriver(self, options) -> bool:
+        """🔧 Instalar automaticamente GeckoDriver"""
+        try:
+            from selenium import webdriver
+            from webdriver_manager.firefox import GeckoDriverManager
+            from selenium.webdriver.firefox.service import Service as FirefoxService
+            
+            driver_path = GeckoDriverManager().install()
+            service = FirefoxService(driver_path)
+            self.driver = webdriver.Firefox(service=service, options=options)
+            return self.driver is not None
+            
+        except Exception:
+            return False
