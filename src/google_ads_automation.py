@@ -1417,6 +1417,10 @@ class GoogleAdsAutomation:
             # TESTE CRÍTICO: Verificar se consegue controlar o browser
             self.logger.info("🧪 TESTE CRÍTICO: Verificando controle do browser...")
             try:
+                if not self.driver:
+                    self.logger.error("💥 ERRO: Driver não existe (None)")
+                    return False
+                    
                 current_url = self.driver.current_url
                 page_title = self.driver.title
                 self.logger.info(f"✅ CONTROLE CONFIRMADO - URL: {current_url}")
@@ -1424,13 +1428,21 @@ class GoogleAdsAutomation:
                 
                 # Teste básico: navegar para uma página simples
                 self.logger.info("🧪 TESTE: Navegando para Google...")
-                self.driver.get("https://www.google.com")
+                if self.driver:
+                    self.driver.get("https://www.google.com")
+                else:
+                    self.logger.error("💥 ERRO: Driver não existe para navegar")
+                    return False
                 
                 # Aguardar carregar
                 time.sleep(3)
                 
-                new_url = self.driver.current_url
-                new_title = self.driver.title
+                if self.driver:
+                    new_url = self.driver.current_url
+                    new_title = self.driver.title
+                else:
+                    self.logger.error("💥 ERRO: Driver não existe para verificar navegação")
+                    return False
                 self.logger.info(f"✅ NAVEGAÇÃO TESTE - URL: {new_url}")
                 self.logger.info(f"✅ NAVEGAÇÃO TESTE - Título: {new_title}")
                 
@@ -1510,6 +1522,10 @@ class GoogleAdsAutomation:
             # TESTE CRÍTICO: Verificar se consegue controlar o browser
             self.logger.info("🧪 TESTE CRÍTICO: Verificando controle do browser...")
             try:
+                if not self.driver:
+                    self.logger.error("💥 ERRO: Driver não existe (None)")
+                    return False
+                    
                 current_url = self.driver.current_url
                 page_title = self.driver.title
                 self.logger.info(f"✅ CONTROLE CONFIRMADO - URL: {current_url}")
@@ -1517,13 +1533,21 @@ class GoogleAdsAutomation:
                 
                 # Teste básico: navegar para uma página simples
                 self.logger.info("🧪 TESTE: Navegando para Google...")
-                self.driver.get("https://www.google.com")
+                if self.driver:
+                    self.driver.get("https://www.google.com")
+                else:
+                    self.logger.error("💥 ERRO: Driver não existe para navegar")
+                    return False
                 
                 # Aguardar carregar
                 time.sleep(3)
                 
-                new_url = self.driver.current_url
-                new_title = self.driver.title
+                if self.driver:
+                    new_url = self.driver.current_url
+                    new_title = self.driver.title
+                else:
+                    self.logger.error("💥 ERRO: Driver não existe para verificar navegação")
+                    return False
                 self.logger.info(f"✅ NAVEGAÇÃO TESTE - URL: {new_url}")
                 self.logger.info(f"✅ NAVEGAÇÃO TESTE - Título: {new_title}")
                 
