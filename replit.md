@@ -1,10 +1,12 @@
 # Overview
 
-The Google Ads Campaign Automation Bot is a desktop application that integrates with AdsPower browser profiles to automate Google Ads campaign creation. The system uses Selenium WebDriver for browser automation and provides a Tkinter-based GUI for user interaction. It manages multiple browser profiles through AdsPower's local API and automates the complete campaign creation workflow on Google Ads.
+The Google Ads Campaign Automation Bot is an advanced desktop application that integrates with AdsPower browser profiles to automate Google Ads search campaign creation. The system features a modern Tkinter-based GUI with checkbox-based profile selection supporting 2000+ profiles, multiple ad titles (up to 15), multiple target locations/countries, and comprehensive language support. It uses Selenium WebDriver for browser automation with anti-detection capabilities and smart popup handling.
 
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
+Campaign focus: Google Search campaigns only (no Display, Shopping, or Video campaigns).
+Interface preference: Modern, professional design with efficient workflow management.
 
 # System Architecture
 
@@ -18,12 +20,15 @@ The application follows a modular, component-based architecture with clear separ
 - **Logging System** (`logger.py`): Structured logging with file rotation
 
 ## Browser Automation Strategy
-The system uses Selenium WebDriver with undetected-chromedriver and selenium-stealth to avoid detection. It maintains a selector-based approach for UI element interaction with fallback strategies for different language interfaces (English/Portuguese).
+The system uses Selenium WebDriver with undetected-chromedriver and selenium-stealth to avoid detection. It navigates to https://ads.google.com/aw/ as the correct entry point and includes comprehensive popup closing mechanisms for cookies, tours, and notification popups. The system maintains a selector-based approach for UI element interaction with fallback strategies for different language interfaces.
 
 ## Profile Management
-AdsPower profiles are managed through their local API (default port 50325), allowing the bot to:
-- Retrieve available browser profiles
-- Start/stop browsers for specific profiles
+AdsPower profiles are managed through their local API (default port 50325) with advanced selection features:
+- Retrieve and display 2000+ browser profiles efficiently
+- Checkbox-based individual profile selection with search filtering
+- Bulk selection/deselection capabilities
+- Real-time selected profile counter
+- Start/stop browsers for multiple selected profiles
 - Maintain session state across multiple campaigns
 
 ## Configuration Pattern
