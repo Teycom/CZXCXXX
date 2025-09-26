@@ -1,0 +1,61 @@
+🔧 CONFIGURAÇÕES NECESSÁRIAS NO ADSPOWER PARA O BOT FUNCIONAR
+
+## 1. HABILITAÇÃO DA API LOCAL ✅
+1. Abrir AdsPower
+2. Ir em Configurações → API
+3. Habilitar "Local API" 
+4. Porta padrão: 50325 (não mudar)
+5. Salvar configurações
+
+## 2. CONFIGURAÇÃO DOS PERFIS 🏃‍♂️
+1. Criar perfis de browser (Chrome recomendado)
+2. Para CADA perfil que vai usar no bot:
+   - Ir em "Configurações do Perfil"
+   - Aba "Avançado"
+   - Habilitar "Debugging Port" 
+   - Deixar porta automática (ou usar porta específica)
+
+## 3. PERMISSÕES DE AUTOMAÇÃO 🤖
+1. Nas configurações do perfil:
+   - Desabilitar "Detecção de WebDriver" se disponível
+   - Ou configurar como "Permitir automação"
+2. Em alguns casos, ir em:
+   - Configurações → Segurança
+   - Permitir "Controle remoto do browser"
+
+## 4. TESTE DE FUNCIONAMENTO 🧪
+Após configurar, teste se está funcionando:
+1. Iniciar um perfil manualmente no AdsPower
+2. Verificar se aparece nas APIs: 
+   - Abrir: http://localhost:50325/api/v1/user/list
+   - Deve mostrar JSON com seus perfis
+3. Para perfil ativo, verificar:
+   - http://localhost:50325/api/v1/browser/active?user_id=SEU_ID
+
+## 5. SOLUÇÃO DE PROBLEMAS COMUNS ⚠️
+
+### "Não foi possível conectar ao AdsPower"
+- ✅ AdsPower está aberto?
+- ✅ API Local está habilitada?
+- ✅ Porta 50325 não está bloqueada por firewall?
+- ✅ Reiniciar AdsPower e tentar novamente
+
+### "ChromeDriver incompatível" 
+- ✅ Usar Chrome versão compatível nos perfis
+- ✅ Deixar AdsPower gerenciar o ChromeDriver automaticamente
+- ✅ Não instalar ChromeDriver separadamente
+
+### "Browser não responde ao controle"
+- ✅ Debugging Port está habilitado no perfil?
+- ✅ Perfil permite automação?
+- ✅ Não há outro software controlando o browser?
+
+### "Página de login sempre aparece"
+- ✅ Fazer login manual no Google Ads ANTES de usar o bot
+- ✅ Salvar cookies/sessão no perfil do AdsPower
+- ✅ Usar contas Google com acesso ao Google Ads
+
+## 6. VERSÕES RECOMENDADAS 📋
+- AdsPower: Versão mais recente
+- Chrome nos perfis: Versão estável (não beta)
+- Sistema operacional: Windows 10/11 recomendado

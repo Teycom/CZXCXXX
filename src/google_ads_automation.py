@@ -250,14 +250,21 @@ class GoogleAdsAutomation:
                     self.logger.error(f"💥 ÚLTIMO RECURSO falhou: {str(install_error)}")
             
             if not driver_created or not self.driver:
-                self.logger.error("💥 FALHA TOTAL: Todas as tentativas de ChromeDriver falharam!")
-                self.logger.error("🔧 PROBLEMA: Incompatibilidade de versão ou driver não disponível")
+                self.logger.error("💥 FALHA CRÍTICA: Todas as tentativas de ChromeDriver falharam!")
+                self.logger.error("🔧 DIAGNÓSTICO:")
+                self.logger.error("   1. ChromeDriver do AdsPower não encontrado ou incompatível")
+                self.logger.error("   2. ChromeDriver do PATH não disponível")
+                self.logger.error("   3. webdriver_manager também falhou")
+                self.logger.error(f"📋 Dados do browser: {browser_info}")
                 return False
             
-            # Configurar WebDriverWait (só se driver existe)
-            if self.driver:
+            # 🔧 CORREÇÃO 3: WebDriverWait com verificação OBRIGATÓRIA
+            try:
                 self.wait = WebDriverWait(self.driver, self.default_timeout)
-            self.logger.info(f"⏱️ WebDriverWait configurado com timeout: {self.default_timeout}s")
+                self.logger.info(f"⏱️ WebDriverWait configurado: timeout {self.default_timeout}s")
+            except Exception as wait_error:
+                self.logger.error(f"💥 ERRO ao configurar WebDriverWait: {str(wait_error)}")
+                return False
             
             # BATERIA DE TESTES CRÍTICOS: Verificar controle TOTAL do browser
             self.logger.info("🧪 BATERIA DE TESTES CRÍTICOS: Verificando controle COMPLETO...")
@@ -364,8 +371,26 @@ class GoogleAdsAutomation:
             except Exception as max_error:
                 self.logger.warning(f"⚠️ Não foi possível maximizar janela: {str(max_error)}")
             
-            self.logger.info("🎉 Driver configurado com TOTAL SUCESSO e CONTROLE VERIFICADO!")
-            return True
+            # VALIDAÇÃO FINAL: Garantir que driver realmente funciona
+            try:
+                # Teste crítico final
+                current_url = self.driver.current_url
+                self.logger.info(f"✅ VALIDAÇÃO FINAL: Driver funcional - URL: {current_url}")
+                self.logger.info("🎉 Driver configurado com SUCESSO VALIDADO!")
+                return True
+                
+            except Exception as validation_error:
+                self.logger.error(f"💥 VALIDAÇÃO FINAL FALHOU: {str(validation_error)}")
+                self.logger.error("🔧 Driver foi criado mas não consegue controlar o browser!")
+                
+                # Limpar driver inválido
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+                self.driver = None
+                self.wait = None
+                return False
             
         except Exception as e:
             self.logger.error(f"💥 ERRO CRÍTICO ao configurar driver: {str(e)}")
@@ -586,13 +611,19 @@ class GoogleAdsAutomation:
                     self.logger.error(f"❌ Erro na tentativa {i}: {str(nav_error)}")
                     continue
             
-            # Se chegou aqui, todas as tentativas falharam
-            self.logger.error("💥 FALHA: Todas as tentativas de navegação falharam")
+            # 🔧 CORREÇÃO 4: Navegação com tratamento adequado de erros
+            self.logger.error("💥 FALHA CRÍTICA: Todas as tentativas de navegação falharam")
+            self.logger.error("🔧 POSSÍVEIS CAUSAS:")
+            self.logger.error("   1. Usuário não está logado no Google Ads")
+            self.logger.error("   2. Conta Google Ads não tem permissões adequadas")
+            self.logger.error("   3. Conexão com internet instável")
+            self.logger.error("   4. Google Ads detectou automação e bloqueou")
             self.take_screenshot("navegacao_falha_total.png")
             return False
             
         except Exception as e:
             self.logger.error(f"💥 ERRO CRÍTICO na navegação: {str(e)}")
+            self.logger.error("🔧 Verifique logs detalhados acima")
             return False
     
     def close_popups(self):
@@ -1391,6 +1422,72 @@ class GoogleAdsAutomation:
             self.logger.error(f"💥 ERRO GRAVE ao configurar anúncios: {str(e)}")
             return False
     
+    def run(self, profile: Dict, config: Dict) -> bool:
+        """🚀 MÉTODO PRINCIPAL que orquestra TODO o fluxo de automação"""
+        try:
+            self.logger.info(f"🚀 INICIANDO automação COMPLETA para perfil: {profile['name']}")
+            
+            # ETAPA 1: Iniciar browser no AdsPower
+            self.logger.info("📱 ETAPA 1: Iniciando browser AdsPower...")
+            from adspower_manager import AdsPowerManager
+            adspower_manager = AdsPowerManager()
+            
+            browser_info = adspower_manager.start_browser(profile['user_id'])
+            if not browser_info:
+                self.logger.error("💥 FALHA na ETAPA 1: Não conseguiu iniciar browser AdsPower")
+                return False
+            
+            self.logger.info("✅ ETAPA 1 COMPLETA: Browser AdsPower iniciado")
+            
+            # ETAPA 2: Configurar e conectar driver Selenium
+            self.logger.info("🔧 ETAPA 2: Configurando driver Selenium...")
+            if not self.setup_driver(browser_info, config.get('headless', False)):
+                self.logger.error("💥 FALHA na ETAPA 2: Não conseguiu configurar driver")
+                # Tentar fechar browser AdsPower
+                try:
+                    adspower_manager.stop_browser(profile['user_id'])
+                except:
+                    pass
+                return False
+            
+            self.logger.info("✅ ETAPA 2 COMPLETA: Driver configurado e conectado")
+            
+            # ETAPA 3: Navegar para Google Ads
+            self.logger.info("🌐 ETAPA 3: Navegando para Google Ads...")
+            if not self.navigate_to_google_ads():
+                self.logger.error("💥 FALHA na ETAPA 3: Não conseguiu navegar para Google Ads")
+                self.cleanup()
+                try:
+                    adspower_manager.stop_browser(profile['user_id'])
+                except:
+                    pass
+                return False
+            
+            self.logger.info("✅ ETAPA 3 COMPLETA: Navegou para Google Ads com sucesso")
+            
+            # ETAPA 4: Criar campanha
+            self.logger.info("📝 ETAPA 4: Criando campanha...")
+            success = self.create_campaign_step_by_step(config)
+            
+            if success:
+                self.logger.info("🎉 ETAPA 4 COMPLETA: Campanha criada com SUCESSO!")
+            else:
+                self.logger.error("💥 FALHA na ETAPA 4: Criação de campanha falhou")
+            
+            # ETAPA 5: Limpeza (sem fechar browser AdsPower)
+            self.logger.info("🧹 ETAPA 5: Limpeza final...")
+            self.cleanup()
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"💥 ERRO CRÍTICO no fluxo principal: {str(e)}")
+            try:
+                self.cleanup()
+            except:
+                pass
+            return False
+    
     def create_campaign_with_browser(self, profile: Dict, config: Dict, browser_info: Dict) -> bool:
         """🚀 Função principal SUPER ROBUSTA para criar campanha com SCREENSHOTS em CADA ETAPA"""
         try:
@@ -1421,38 +1518,8 @@ class GoogleAdsAutomation:
             self.logger.info("✅ ETAPA 2A COMPLETA: Browser preparado para controle total")
             self.take_screenshot("etapa_2a_preparacao_ok.png")
             
-            # ETAPA 2B: Navegação EXTREMAMENTE CALCULADA
-            self.logger.info("🧮 ETAPA 2B: Navegação EXTREMAMENTE CALCULADA para Google Ads...")
-            self.take_screenshot("etapa_2b_antes_navegacao.png")
-            
-            # Tentar múltiplas URLs com navegação calculada
-            target_urls = [
-                "https://ads.google.com/aw/",
-                "https://ads.google.com/home/",
-                "https://ads.google.com/",
-                "https://ads.google.com/aw/campaigns/",
-                "https://ads.google.com/aw/overview/"
-            ]
-            
-            navigation_success = False
-            for attempt, url in enumerate(target_urls, 1):
-                self.logger.info(f"🎯 TENTATIVA {attempt}: Navegação calculada para {url}")
-                
-                if self.navigate_with_extreme_calculation(url):
-                    self.logger.info(f"✅ SUCESSO na tentativa {attempt}!")
-                    navigation_success = True
-                    break
-                else:
-                    self.logger.warning(f"⚠️ Tentativa {attempt} falhou, tentando próxima...")
-                    time.sleep(2)  # Pausa entre tentativas
-            
-            if not navigation_success:
-                self.logger.error("❌ FALHA na ETAPA 2B: Todas as tentativas de navegação falharam")
-                self.take_screenshot("etapa_2b_erro_navegacao.png")
-                return False
-            
-            self.logger.info("✅ ETAPA 2B COMPLETA: Navegação calculada bem-sucedida")
-            self.take_screenshot("etapa_2b_navegacao_ok.png")
+            # Usar o método run() principal para orquestrar tudo
+            return self.run(profile, config)
             
             # ETAPA 3: Aguardar carregamento e verificar estado
             self.logger.info("⏳ ETAPA 3: Verificando estado da página após navegação...")
