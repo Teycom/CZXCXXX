@@ -170,26 +170,137 @@ class GoogleAdsAutomation:
             return False
     
     def navigate_to_google_ads(self) -> bool:
-        """Navegar para o Google Ads"""
-        try:
-            # URL correta do Google Ads conforme especificado
-            if self.driver:
-                self.driver.get("https://ads.google.com/aw/")
-            time.sleep(self.default_delay)
-            
-            # Verificar se chegou na página correta
-            if self.wait:
-                self.wait.until(lambda d: "ads.google.com" in d.current_url.lower())
-            
-            # Fechar popups que podem aparecer
-            self.close_popups()
-            
-            self.logger.info("Navegou para Google Ads com sucesso")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Erro ao navegar para Google Ads: {str(e)}")
-            return False
+        """🌐 Navegar para Google Ads com MÚLTIPLAS TENTATIVAS e FALLBACKS ROBUSTOS"""
+        
+        # URLs alternativas para tentar em ordem de prioridade
+        target_urls = [
+            "https://ads.google.com/aw/",
+            "https://ads.google.com/home/",
+            "https://ads.google.com/",
+            "https://ads.google.com/aw/campaigns/",
+            "https://ads.google.com/aw/overview/"
+        ]
+        
+        for attempt in range(len(target_urls)):
+            try:
+                target_url = target_urls[attempt]
+                self.logger.info(f"🌐 TENTATIVA {attempt + 1}: Navegando para {target_url}")
+                
+                if not self.driver:
+                    self.logger.error("❌ Driver não está inicializado!")
+                    return False
+                
+                # Verificar URL atual antes
+                try:
+                    current_url = self.driver.current_url
+                    self.logger.info(f"📍 URL atual: {current_url}")
+                except:
+                    self.logger.warning("⚠️ Não foi possível obter URL atual")
+                
+                # Navegar para URL alvo
+                self.logger.info(f"🚀 Navegando para: {target_url}")
+                self.driver.get(target_url)
+                
+                # Aguardar carregamento inicial com timeout inteligente
+                self.logger.info("⏳ Aguardando carregamento inicial...")
+                time.sleep(self.default_delay * (attempt + 1))  # Aumenta tempo conforme tentativas
+                
+                # Aguardar página carregar completamente
+                self.logger.info("⏳ Aguardando página carregar completamente...")
+                if not self.wait_for_page_load(timeout=30):
+                    self.logger.warning("⚠️ Timeout no carregamento da página")
+                
+                # Verificar se chegou na página correta
+                final_url = self.driver.current_url
+                self.logger.info(f"🎯 URL final obtida: {final_url}")
+                
+                # Verificar título da página
+                try:
+                    title = self.driver.title
+                    self.logger.info(f"📄 Título da página: {title}")
+                except:
+                    self.logger.warning("⚠️ Não foi possível obter título da página")
+                    title = ""
+                
+                # Fechar popups que podem aparecer
+                self.logger.info("🚫 Fechando popups que podem atrapalhar...")
+                self.close_popups()
+                
+                # Tirar screenshot para debug desta tentativa
+                screenshot_path = self.take_screenshot(f"etapa_navegacao_tentativa_{attempt + 1}.png")
+                self.logger.info(f"📸 Screenshot salvo: {screenshot_path}")
+                
+                # Análise detalhada do conteúdo da página
+                page_source = self.driver.page_source.lower()
+                success_indicators = [
+                    ("campanhas" in page_source, "palavra 'campanhas' encontrada"),
+                    ("campaigns" in page_source, "palavra 'campaigns' encontrada"),
+                    ("google ads" in title.lower(), "título contém 'Google Ads'"),
+                    ("ads.google.com" in final_url.lower(), "URL contém 'ads.google.com'"),
+                    ("overview" in final_url.lower(), "URL contém 'overview'"),
+                    ("campaign" in page_source, "palavra 'campaign' encontrada")
+                ]
+                
+                success_count = 0
+                for indicator_found, description in success_indicators:
+                    if indicator_found:
+                        self.logger.info(f"✅ INDICADOR DE SUCESSO: {description}")
+                        success_count += 1
+                    else:
+                        self.logger.debug(f"❌ Indicador não encontrado: {description}")
+                
+                # Verificar status de login
+                if "entrar" in page_source or "sign in" in page_source or "login" in page_source:
+                    self.logger.warning(f"⚠️ TENTATIVA {attempt + 1}: Detectado página de login - continuando para próxima URL...")
+                    continue  # Continuar para próxima URL em vez de parar
+                elif success_count >= 2:  # Pelo menos 2 indicadores de sucesso
+                    self.logger.info(f"🎉 SUCESSO na tentativa {attempt + 1}! {success_count} indicadores positivos")
+                    
+                    # Verificar se consegue encontrar elementos típicos do Google Ads
+                    try:
+                        # Procurar por elementos comuns do dashboard
+                        common_elements = [
+                            "//nav", "//button", "//div[contains(@class, 'menu')]", 
+                            "//*[contains(text(), 'Campaign') or contains(text(), 'Campanha')]"
+                        ]
+                        
+                        elements_found = 0
+                        for element_xpath in common_elements:
+                            try:
+                                elements = self.driver.find_elements(By.XPATH, element_xpath)
+                                if elements:
+                                    elements_found += 1
+                                    self.logger.info(f"✅ Elemento encontrado: {element_xpath}")
+                            except:
+                                pass
+                        
+                        self.logger.info(f"📊 Encontrados {elements_found} elementos comuns do dashboard")
+                        
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Erro ao verificar elementos: {str(e)}")
+                    
+                    return True
+                else:
+                    self.logger.warning(f"⚠️ TENTATIVA {attempt + 1} INCONCLUSIVA: apenas {success_count} indicadores positivos")
+                
+            except Exception as e:
+                self.logger.error(f"💥 ERRO na tentativa {attempt + 1}: {str(e)}")
+                try:
+                    current_url = self.driver.current_url if self.driver else "Driver não disponível"
+                    self.logger.error(f"📍 URL no momento do erro: {current_url}")
+                    self.take_screenshot(f"erro_tentativa_{attempt + 1}.png")
+                except:
+                    pass
+                
+                # Se não é a última tentativa, continua
+                if attempt < len(target_urls) - 1:
+                    self.logger.info(f"🔄 Tentando próxima URL em {self.retry_delay} segundos...")
+                    time.sleep(self.retry_delay)
+                    continue
+        
+        # Se chegou aqui, todas as tentativas falharam
+        self.logger.error("💥 FALHA TOTAL: Todas as tentativas de navegação falharam")
+        return False
     
     def close_popups(self):
         """Fechar popups e elementos que podem atrapalhar"""
@@ -299,70 +410,99 @@ class GoogleAdsAutomation:
             return False
     
     def create_campaign_step_by_step(self, config: Dict) -> bool:
-        """Criar campanha passo a passo"""
+        """🚀 Criar campanha passo a passo com LOGS SUPER DETALHADOS"""
         try:
-            self.logger.info("Iniciando criação de campanha...")
+            self.logger.info("🚀 INICIANDO criação de campanha step-by-step...")
             
-            # Passo 1: Clicar em "Nova Campanha"
-            if not self.click_element_safe(self.selectors['new_campaign_btn']):
-                # Tentar seletores alternativos
+            # PASSO 1: Navegar para campanhas e tentar nova campanha
+            self.logger.info("🔍 PASSO 1: Procurando botão 'Nova Campanha'...")
+            if not self.try_multilingual_click('new_campaign_btn'):
+                self.logger.warning("⚠️ Tentativa 1 falhou, tentando seletores alternativos...")
+                
+                # Tentar seletores alternativos mais robustos
                 alternative_selectors = [
-                    "//button[contains(@class, 'new-campaign')]",
-                    "//a[contains(text(), 'Nova campanha')]",
-                    "//button[contains(@aria-label, 'Nova campanha')]"
+                    "//button[contains(@class, 'new-campaign') or contains(@class, 'create') or contains(@aria-label, 'Nova')]",
+                    "//a[contains(text(), 'Nova') or contains(text(), 'New') or contains(text(), 'Create')]",
+                    "//button[contains(@data-track, 'create') or contains(@data-action, 'new')]",
+                    "//div[@role='button'][contains(text(), '+') or contains(text(), 'Nova')]"
                 ]
                 
                 success = False
-                for alt_selector in alternative_selectors:
+                for i, alt_selector in enumerate(alternative_selectors):
+                    self.logger.info(f"🔄 Tentativa alternativa {i+1}: {alt_selector[:50]}...")
                     if self.click_element_safe(alt_selector):
+                        self.logger.info(f"✅ SUCESSO com seletor alternativo {i+1}!")
                         success = True
                         break
                 
                 if not success:
-                    self.logger.error("Não foi possível encontrar botão 'Nova Campanha'")
+                    self.logger.error("💥 FALHA TOTAL: Nenhum botão 'Nova Campanha' encontrado")
+                    self.take_screenshot("erro_nova_campanha.png")
                     return False
+            else:
+                self.logger.info("✅ PASSO 1 CONCLUÍDO: Botão 'Nova Campanha' clicado!")
+            
+            self.wait_for_page_load()
+            self.logger.info("⏳ Aguardando carregamento da página...")
+            
+            # PASSO 2: Selecionar objetivo (se aparecer)
+            self.logger.info("🎯 PASSO 2: Tentando selecionar objetivo da campanha...")
+            objective_success = False
+            objectives = [
+                "//button[contains(text(), 'sem orientação') or contains(text(), 'without goal')]",
+                "//div[contains(text(), 'Vendas') or contains(text(), 'Sales')]",
+                "//div[contains(text(), 'Leads')]", 
+                "//div[contains(text(), 'Tráfego') or contains(text(), 'Traffic')]"
+            ]
+            
+            for i, obj_selector in enumerate(objectives):
+                self.logger.info(f"🎯 Tentando objetivo {i+1}...")
+                if self.click_element_safe(obj_selector):
+                    self.logger.info(f"✅ OBJETIVO SELECIONADO: {obj_selector[:30]}...")
+                    objective_success = True
+                    break
+            
+            if not objective_success:
+                self.logger.info("ℹ️ Nenhum objetivo selecionado (pode não ser necessário)")
             
             self.wait_for_page_load()
             
-            # Passo 2: Selecionar objetivo da campanha (se necessário)
-            # Muitas vezes o Google Ads pede para selecionar um objetivo primeiro
-            try:
-                # Procurar por objetivos comuns
-                objectives = [
-                    "//div[contains(text(), 'Vendas')]",
-                    "//div[contains(text(), 'Leads')]", 
-                    "//div[contains(text(), 'Tráfego do website')]",
-                    "//button[contains(text(), 'Criar campanha sem orientação de objetivo')]"
-                ]
+            # PASSO 3: Selecionar tipo de campanha (Pesquisa)
+            self.logger.info("🔍 PASSO 3: Selecionando tipo 'Pesquisa/Search'...")
+            if not self.try_multilingual_click('search_network'):
+                self.logger.warning("⚠️ Seletores multilíngues falharam, tentando alternativos...")
                 
-                for obj_selector in objectives:
-                    if self.click_element_safe(obj_selector):
-                        break
-                        
-                self.wait_for_page_load()
-            except:
-                pass  # Nem sempre é necessário
-            
-            # Passo 3: Selecionar tipo de campanha (Pesquisa)
-            if not self.click_element_safe(self.selectors['campaign_type_search']):
-                # Seletores alternativos para campanha de pesquisa
                 search_selectors = [
-                    "//div[contains(@class, 'campaign-type')]//div[contains(text(), 'Pesquisa')]",
-                    "//button[contains(text(), 'Pesquisa')]",
-                    "//div[contains(text(), 'Search')]"
+                    "//div[contains(@class, 'campaign-type')]//*[contains(text(), 'Pesquisa') or contains(text(), 'Search')]",
+                    "//button[contains(text(), 'Pesquisa') or contains(text(), 'Search')]",
+                    "//div[@role='button'][contains(text(), 'Pesquisa') or contains(text(), 'Search')]",
+                    "//label[contains(text(), 'Pesquisa') or contains(text(), 'Search')]/..//input"
                 ]
                 
-                for search_sel in search_selectors:
+                search_success = False
+                for i, search_sel in enumerate(search_selectors):
+                    self.logger.info(f"🔍 Tentando seletor de pesquisa {i+1}...")
                     if self.click_element_safe(search_sel):
+                        self.logger.info(f"✅ PESQUISA SELECIONADA: {search_sel[:30]}...")
+                        search_success = True
                         break
+                
+                if not search_success:
+                    self.logger.error("💥 FALHA: Não conseguiu selecionar tipo 'Pesquisa'")
+                    self.take_screenshot("erro_tipo_pesquisa.png")
+                    return False
+            else:
+                self.logger.info("✅ PASSO 3 CONCLUÍDO: Tipo 'Pesquisa' selecionado!")
             
             self.wait_for_page_load()
             
-            # Passo 4: Usar novo fluxo oficial
-            return self.create_campaign_google_ads_official_flow(config)
+            # PASSO 4: Continuar com configuração detalhada
+            self.logger.info("➡️ INICIANDO configuração detalhada da campanha...")
+            return self.configure_campaign_details(config)
             
         except Exception as e:
-            self.logger.error(f"Erro na criação da campanha: {str(e)}")
+            self.logger.error(f"💥 ERRO CRÍTICO na criação da campanha: {str(e)}")
+            self.take_screenshot("erro_criacao_campanha.png")
             return False
     
     def create_campaign_google_ads_official_flow(self, config: Dict) -> bool:
@@ -830,190 +970,225 @@ class GoogleAdsAutomation:
             return False
     
     def configure_campaign_details(self, config: Dict) -> bool:
-        """Configurar detalhes específicos da campanha"""
+        """📝 Configurar detalhes específicos da campanha com LOGS DETALHADOS"""
         try:
+            self.logger.info("📝 INICIANDO configuração de detalhes da campanha...")
+            
             # Nome da campanha
-            if config.get('campaign_name'):
-                name_selectors = [
-                    self.selectors['campaign_name_input'],
-                    "input[placeholder*='nome']",
-                    "input[placeholder*='name']",
-                    "//input[contains(@aria-label, 'nome')]"
-                ]
-                
-                for name_sel in name_selectors:
-                    if self.input_text_safe(name_sel, config['campaign_name']):
-                        break
+            campaign_name = config.get('campaign_name', 'Campanha Teste')
+            self.logger.info(f"🏷️ Inserindo nome da campanha: {campaign_name}")
+            if not self.try_multilingual_input('campaign_name', campaign_name):
+                self.logger.error("❌ FALHA ao inserir nome da campanha")
+                return False
+            self.logger.info("✅ Nome da campanha inserido com sucesso")
             
             # Orçamento
-            if config.get('budget'):
-                budget_selectors = [
-                    self.selectors['budget_input'],
-                    "input[placeholder*='orçamento']",
-                    "input[placeholder*='budget']",
-                    "//input[contains(@aria-label, 'orçamento')]"
-                ]
-                
-                for budget_sel in budget_selectors:
-                    if self.input_text_safe(budget_sel, config['budget']):
-                        break
+            budget = str(config.get('daily_budget', 50))
+            self.logger.info(f"💰 Inserindo orçamento diário: R$ {budget}")
+            if not self.try_multilingual_input('budget', budget):
+                self.logger.error("❌ FALHA ao inserir orçamento")
+                return False
+            self.logger.info("✅ Orçamento inserido com sucesso")
             
-            # Localização
-            if config.get('location'):
-                location_selectors = [
-                    self.selectors['location_input'],
-                    "input[placeholder*='localização']",
-                    "input[placeholder*='location']",
-                    "//input[contains(@aria-label, 'local')]"
-                ]
-                
-                for loc_sel in location_selectors:
-                    if self.input_text_safe(loc_sel, config['location']):
-                        time.sleep(2)
-                        # Pressionar Enter ou clicar na primeira sugestão
-                        try:
-                            if self.driver:
-                                suggestion = self.driver.find_element(By.XPATH, "//div[contains(@class, 'suggestion')]")
-                                suggestion.click()
-                        except:
-                            pass
-                        break
+            # Localização  
+            locations = config.get('target_locations', ['Brasil'])
+            location_text = ', '.join(locations)
+            self.logger.info(f"🌍 Inserindo localização: {location_text}")
+            if not self.try_multilingual_input('location', location_text):
+                self.logger.error("❌ FALHA ao inserir localização")
+                return False
+            self.logger.info("✅ Localização inserida com sucesso")
             
             # Continuar para próxima etapa
-            if self.click_element_safe(self.selectors['save_continue_btn']):
-                self.wait_for_page_load()
-                return self.configure_ad_groups_and_keywords(config)
+            self.logger.info("➡️ Clicando em 'Continuar' para próxima etapa...")
+            if not self.try_multilingual_click('continue_btn'):
+                self.logger.error("❌ FALHA ao clicar em 'Continuar'")
+                return False
             
-            return False
+            self.logger.info("🎉 DETALHES DA CAMPANHA configurados com SUCESSO!")
+            self.wait_for_page_load()
+            return True
             
         except Exception as e:
-            self.logger.error(f"Erro ao configurar detalhes da campanha: {str(e)}")
+            self.logger.error(f"💥 ERRO GRAVE ao configurar detalhes da campanha: {str(e)}")
             return False
     
     def configure_ad_groups_and_keywords(self, config: Dict) -> bool:
-        """Configurar grupos de anúncios e palavras-chave"""
+        """🔑 Configurar grupos de anúncios e palavras-chave com LOGS DETALHADOS"""
         try:
+            self.logger.info("🔑 INICIANDO configuração de palavras-chave...")
+            
             # Adicionar palavras-chave
-            keywords = config.get('keywords', [])
-            if keywords:
-                keyword_selectors = [
-                    self.selectors['keyword_input'],
-                    "textarea[placeholder*='palavra']",
-                    "textarea[placeholder*='keyword']",
-                    "//textarea[contains(@aria-label, 'palavra')]"
-                ]
-                
-                keywords_text = '\n'.join(keywords)
-                
-                for kw_sel in keyword_selectors:
-                    if self.input_text_safe(kw_sel, keywords_text):
-                        break
+            keywords = config.get('keywords', ['palavra-chave exemplo'])
+            keywords_text = '\n'.join(keywords)
+            
+            self.logger.info(f"🎯 Inserindo {len(keywords)} palavras-chave: {keywords[:3]}...")
+            if not self.try_multilingual_input('keywords', keywords_text):
+                self.logger.error("❌ FALHA ao inserir palavras-chave")
+                return False
+            self.logger.info("✅ Palavras-chave inseridas com sucesso")
             
             # Continuar para anúncios
-            if self.click_element_safe(self.selectors['save_continue_btn']):
-                self.wait_for_page_load()
-                return self.configure_ads(config)
+            self.logger.info("➡️ Clicando em 'Continuar' para configurar anúncios...")
+            if not self.try_multilingual_click('continue_btn'):
+                self.logger.error("❌ FALHA ao clicar em 'Continuar' após palavras-chave")
+                return False
             
-            return False
+            self.logger.info("🎉 PALAVRAS-CHAVE configuradas com SUCESSO!")
+            self.wait_for_page_load()
+            return True
             
         except Exception as e:
-            self.logger.error(f"Erro ao configurar palavras-chave: {str(e)}")
+            self.logger.error(f"💥 ERRO GRAVE ao configurar palavras-chave: {str(e)}")
             return False
     
     def configure_ads(self, config: Dict) -> bool:
-        """Configurar anúncios"""
+        """📢 Configurar anúncios com LOGS DETALHADOS"""
         try:
-            # Título do anúncio
-            if config.get('ad_title'):
-                title_selectors = [
-                    self.selectors['ad_headline_input'],
-                    "input[placeholder*='título']",
-                    "input[placeholder*='headline']",
-                    "//input[contains(@aria-label, 'título')]"
-                ]
-                
-                for title_sel in title_selectors:
-                    if self.input_text_safe(title_sel, config['ad_title']):
-                        break
+            self.logger.info("📢 INICIANDO configuração de anúncios...")
             
-            # Descrição do anúncio
-            if config.get('ad_description'):
-                desc_selectors = [
-                    self.selectors['ad_description_input'],
-                    "textarea[placeholder*='descrição']",
-                    "textarea[placeholder*='description']",
-                    "//textarea[contains(@aria-label, 'descrição')]"
-                ]
-                
-                for desc_sel in desc_selectors:
-                    if self.input_text_safe(desc_sel, config['ad_description']):
-                        break
+            # Títulos do anúncio (até 15 títulos no Google Ads)
+            headlines = config.get('ad_headlines', ['Título do Anúncio 1', 'Título do Anúncio 2'])
+            self.logger.info(f"📝 Inserindo {len(headlines)} títulos de anúncio...")
+            for i, headline in enumerate(headlines[:3]):  # Limitar a 3 por simplicidade
+                if not self.try_multilingual_input('headlines', headline):
+                    self.logger.warning(f"⚠️ Falha ao inserir título {i+1}: {headline}")
+                else:
+                    self.logger.info(f"✅ Título {i+1} inserido: {headline}")
+            
+            # Descrições do anúncio (até 4 descrições no Google Ads)
+            descriptions = config.get('ad_descriptions', ['Descrição do anúncio exemplo'])
+            self.logger.info(f"📄 Inserindo {len(descriptions)} descrições de anúncio...")
+            for i, desc in enumerate(descriptions[:2]):  # Limitar a 2 por simplicidade
+                if not self.try_multilingual_input('descriptions', desc):
+                    self.logger.warning(f"⚠️ Falha ao inserir descrição {i+1}: {desc}")
+                else:
+                    self.logger.info(f"✅ Descrição {i+1} inserida: {desc}")
             
             # URL de destino
-            if config.get('landing_url'):
-                url_selectors = [
-                    self.selectors['final_url_input'],
-                    "input[placeholder*='URL']",
-                    "input[placeholder*='url']",
-                    "//input[contains(@aria-label, 'URL')]"
-                ]
-                
-                for url_sel in url_selectors:
-                    if self.input_text_safe(url_sel, config['landing_url']):
-                        break
+            final_url = config.get('final_url', 'https://exemplo.com')
+            self.logger.info(f"🔗 Inserindo URL de destino: {final_url}")
+            if not self.try_multilingual_input('url', final_url):
+                self.logger.error("❌ FALHA ao inserir URL de destino")
+                return False
+            self.logger.info("✅ URL de destino inserida com sucesso")
             
             # Publicar campanha
-            if self.click_element_safe(self.selectors['publish_btn']):
-                self.wait_for_page_load()
-                self.logger.info("Campanha publicada com sucesso!")
-                return True
+            self.logger.info("🚀 TENTANDO publicar a campanha...")
+            if not self.try_multilingual_click('publish_btn'):
+                self.logger.warning("⚠️ Botão 'Publicar' não encontrado, tentando 'Continuar' primeiro...")
+                
+                # Tentar continuar primeiro
+                if self.try_multilingual_click('continue_btn'):
+                    self.logger.info("✅ Clicou em 'Continuar', tentando 'Publicar' novamente...")
+                    self.wait_for_page_load()
+                    
+                    if not self.try_multilingual_click('publish_btn'):
+                        self.logger.error("❌ FALHA TOTAL ao publicar campanha")
+                        return False
+                else:
+                    self.logger.error("❌ FALHA TOTAL - nem 'Continuar' nem 'Publicar' funcionaram")
+                    return False
             
-            # Se não encontrar botão publicar, tentar salvar e continuar
-            if self.click_element_safe(self.selectors['save_continue_btn']):
-                self.wait_for_page_load()
-                # Tentar publicar novamente
-                if self.click_element_safe(self.selectors['publish_btn']):
-                    self.logger.info("Campanha publicada com sucesso!")
-                    return True
-            
-            return False
+            self.logger.info("🎉 CAMPANHA PUBLICADA COM SUCESSO!")
+            self.wait_for_page_load(timeout=30)  # Publicação pode demorar
+            return True
             
         except Exception as e:
-            self.logger.error(f"Erro ao configurar anúncios: {str(e)}")
+            self.logger.error(f"💥 ERRO GRAVE ao configurar anúncios: {str(e)}")
             return False
     
     def create_campaign_with_browser(self, profile: Dict, config: Dict, browser_info: Dict) -> bool:
-        """Função principal para criar campanha usando browser AdsPower já iniciado"""
+        """🚀 Função principal SUPER ROBUSTA para criar campanha com SCREENSHOTS em CADA ETAPA"""
         try:
-            # Configurar driver do Selenium para conectar ao browser existente
+            self.logger.info(f"🚀 INICIANDO automação COMPLETA para perfil: {profile['name']}")
+            
+            # ETAPA 1: Configurar driver do Selenium
+            self.logger.info("🔧 ETAPA 1: Configurando driver do Selenium...")
+            self.take_screenshot("etapa_1_antes_driver.png")
+            
             headless = config.get('headless', False)
             if not self.setup_driver(browser_info, headless):
+                self.logger.error("❌ FALHA na ETAPA 1: Não foi possível configurar o driver")
+                self.take_screenshot("etapa_1_erro_driver.png")
                 return False
             
-            # Navegar para Google Ads
+            self.logger.info("✅ ETAPA 1 COMPLETA: Driver configurado com sucesso")
+            self.take_screenshot("etapa_1_driver_ok.png")
+            
+            # ETAPA 2: Navegar para Google Ads (com múltiplas tentativas)
+            self.logger.info("🌐 ETAPA 2: Navegando para Google Ads com sistema robusto...")
+            self.take_screenshot("etapa_2_antes_navegacao.png")
+            
             if not self.navigate_to_google_ads():
+                self.logger.error("❌ FALHA na ETAPA 2: Não conseguiu navegar para Google Ads")
+                self.take_screenshot("etapa_2_erro_navegacao.png")
                 return False
             
-            # Aguardar página carregar completamente
-            self.wait_for_page_load()
+            self.logger.info("✅ ETAPA 2 COMPLETA: Navegação para Google Ads bem-sucedida")
+            self.take_screenshot("etapa_2_navegacao_ok.png")
             
-            # Criar campanha passo a passo
+            # ETAPA 3: Aguardar carregamento e verificar estado
+            self.logger.info("⏳ ETAPA 3: Verificando estado da página após navegação...")
+            self.wait_for_page_load()
+            self.take_screenshot("etapa_3_pagina_carregada.png")
+            
+            # Verificar se realmente está na página certa
+            try:
+                if not self.driver:
+                    self.logger.error("❌ FALHA na ETAPA 3: Driver não está disponível")
+                    return False
+                    
+                current_url = self.driver.current_url
+                title = self.driver.title
+                self.logger.info(f"📍 URL atual: {current_url}")
+                self.logger.info(f"📄 Título: {title}")
+                
+                if "ads.google.com" not in current_url.lower():
+                    self.logger.error(f"❌ FALHA na ETAPA 3: URL incorreta: {current_url}")
+                    self.take_screenshot("etapa_3_url_incorreta.png")
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f"❌ FALHA na ETAPA 3: Erro ao verificar estado: {str(e)}")
+                self.take_screenshot("etapa_3_erro_verificacao.png")
+                return False
+            
+            self.logger.info("✅ ETAPA 3 COMPLETA: Estado da página verificado")
+            
+            # ETAPA 4: Iniciar criação de campanha
+            self.logger.info("📝 ETAPA 4: INICIANDO criação de campanha step-by-step...")
+            self.take_screenshot("etapa_4_antes_campanha.png")
+            
             success = self.create_campaign_step_by_step(config)
             
             if success:
+                self.logger.info("🎉 ETAPA 4 COMPLETA: Campanha criada com SUCESSO!")
+                self.take_screenshot("etapa_4_campanha_sucesso.png")
                 self.logger.info(f"✅ Campanha '{config.get('campaign_name', 'Sem nome')}' criada com sucesso no perfil {profile['name']}")
             else:
+                self.logger.error("❌ FALHA na ETAPA 4: Criação de campanha falhou")
+                self.take_screenshot("etapa_4_campanha_erro.png")
                 self.logger.error(f"❌ Falha ao criar campanha no perfil {profile['name']}")
+            
+            # ETAPA 5: Verificação final e limpeza
+            self.logger.info("🧹 ETAPA 5: Verificação final e limpeza...")
+            self.take_screenshot("etapa_5_final.png")
             
             return success
             
         except Exception as e:
-            self.logger.error(f"Erro geral ao criar campanha no perfil {profile['name']}: {str(e)}")
+            self.logger.error(f"💥 ERRO CRÍTICO na automação do perfil {profile['name']}: {str(e)}")
+            self.take_screenshot("erro_critico_geral.png")
             return False
             
         finally:
-            # Limpar recursos do driver (mas não fechar browser do AdsPower)
-            self.cleanup()
+            # Sempre limpar recursos
+            try:
+                self.logger.info("🧹 Limpando recursos do driver...")
+                self.cleanup()
+            except Exception as cleanup_error:
+                self.logger.warning(f"⚠️ Erro ao limpar recursos: {str(cleanup_error)}")
     
     def create_campaign(self, profile: Dict, config: Dict) -> bool:
         """Método legado - mantido para compatibilidade"""
@@ -1088,7 +1263,7 @@ class GoogleAdsAutomation:
                 scores[lang] = sum(1 for word in words if word.lower() in page_text)
             
             # Detectar idioma com maior pontuação
-            detected_lang = max(scores, key=scores.get)
+            detected_lang = max(scores.keys(), key=lambda k: scores[k])
             
             if scores[detected_lang] > 0:
                 self.current_language = detected_lang
@@ -1104,7 +1279,7 @@ class GoogleAdsAutomation:
             self.current_language = 'pt'
             return 'pt'
     
-    def try_multilingual_click(self, selector_group: str, selector_key: str = None) -> bool:
+    def try_multilingual_click(self, selector_group: str, selector_key: str | None = None) -> bool:
         """🔄 Tentar clique em múltiplos idiomas com várias tentativas"""
         
         # Se idioma for auto, detectar primeiro
