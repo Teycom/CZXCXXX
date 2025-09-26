@@ -6,6 +6,7 @@ The Google Ads Campaign Automation Bot is an advanced desktop application that i
 
 Preferred communication style: Simple, everyday language.
 Campaign focus: Google Search campaigns only (no Display, Shopping, or Video campaigns).
+Campaign objectives: Only the 4 objectives that support search campaigns - Vendas (Sales), Leads, Tráfego do site (Website traffic), and Criar campanha sem orientação (Create campaign without goal guidance).
 Interface preference: Modern, professional design with efficient workflow management.
 
 # System Architecture
