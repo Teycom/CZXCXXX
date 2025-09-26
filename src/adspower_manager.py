@@ -162,17 +162,25 @@ class AdsPowerManager:
                     except Exception as status_error:
                         self.logger.warning(f"⚠️ Erro ao verificar status: {str(status_error)}")
                 
-                # MÉTODO 3: Se tem dados básicos, assumir funcional
-                if not browser_functional and browser_info:
-                    # Se AdsPower retornou dados e há porta, assumir que está funcional
-                    basic_indicators = ['debug_port', 'debugPort', 'remote_debugging_port', 'port', 'webdriver_port']
-                    has_port_info = any(field in browser_info for field in basic_indicators)
-                    
-                    if has_port_info:
-                        self.logger.info("✅ BROWSER considerado FUNCIONAL - tem informações de porta")
-                        browser_functional = True
-                    else:
-                        self.logger.warning("⚠️ Browser retornado mas sem informações de porta")
+                # MÉTODO 3: ÚLTIMA TENTATIVA - testar porta padrão se ainda não funcional
+                if not browser_functional and browser_info and debug_port:
+                    # Tentar mais uma vez com a porta configurada
+                    try:
+                        final_test_url = f"http://127.0.0.1:{debug_port}/json/version"
+                        final_response = requests.get(final_test_url, timeout=3)
+                        if final_response.status_code == 200:
+                            version_data = final_response.json()
+                            self.logger.info(f"✅ ÚLTIMA TENTATIVA SUCESSO: Versão Chrome: {version_data.get('Browser', 'Desconhecida')}")
+                            browser_functional = True
+                        else:
+                            self.logger.warning(f"⚠️ Última tentativa falhou - porta {debug_port} não acessível")
+                    except Exception as final_test_error:
+                        self.logger.warning(f"⚠️ Última tentativa de teste falhou: {str(final_test_error)}")
+                        
+                    # Se mesmo assim não funciona, FALHA DEFINITIVA
+                    if not browser_functional:
+                        self.logger.error("💥 FALHA DEFINITIVA: Browser não passa em nenhum teste de funcionalidade")
+                        return None
                 
                 if browser_functional:
                     self.active_browsers[user_id] = browser_info
