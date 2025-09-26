@@ -1,6 +1,6 @@
 # Overview
 
-The Google Ads Campaign Automation Bot is an advanced desktop application that integrates with AdsPower browser profiles to automate Google Ads search campaign creation. The system features a modern Tkinter-based GUI with checkbox-based profile selection supporting 2000+ profiles, multiple ad titles (up to 15), multiple target locations/countries, and comprehensive language support. It uses Selenium WebDriver for browser automation with anti-detection capabilities and smart popup handling.
+The Google Ads Campaign Automation Bot is an advanced desktop application that integrates with AdsPower browser profiles to automate Google Ads search campaign creation. The system features a modern Tkinter-based GUI with checkbox-based profile selection supporting 2000+ profiles, multiple ad titles (up to 15), multiple target locations/countries, and **SUPER ROBUST MULTILINGUAL SUPPORT**. It uses Selenium WebDriver with intelligent language detection and automatic fallback systems for Portuguese, English, and Spanish interfaces. The bot features advanced retry mechanisms and smart popup handling for maximum success rate across different language configurations.
 
 # User Preferences
 
@@ -20,8 +20,23 @@ The application follows a modular, component-based architecture with clear separ
 - **Configuration Management** (`config.py`): Centralized configuration using dataclasses
 - **Logging System** (`logger.py`): Structured logging with file rotation
 
-## Browser Automation Strategy
-The system uses Selenium WebDriver with undetected-chromedriver and selenium-stealth to avoid detection. It navigates to https://ads.google.com/aw/ as the correct entry point and includes comprehensive popup closing mechanisms for cookies, tours, and notification popups. The system maintains a selector-based approach for UI element interaction with fallback strategies for different language interfaces.
+## Super Robust Multilingual Automation Strategy
+The system uses Selenium WebDriver with undetected-chromedriver and selenium-stealth to avoid detection. It features **SUPER ROBUST MULTILINGUAL SUPPORT** with:
+
+### Automatic Language Detection
+- **Smart Detection**: Automatically detects Portuguese, English, or Spanish interface
+- **Fallback Priority**: Detected language → Portuguese → English → Spanish
+- **Multiple Attempts**: Up to 3-5 retry attempts with progressive delays
+
+### Multilingual Selector System
+- **Complete Coverage**: Comprehensive selectors for PT/EN/ES interfaces
+- **Multiple Fallbacks**: Each element has multiple selector variations per language
+- **Smart Retry**: Progressive retry system with increasing wait times
+
+### Robust Error Handling
+- **Smart Wait and Retry**: Intelligent retry system with page load detection
+- **Popup Management**: Automatic popup closing between attempts
+- **Language Adaptation**: Adapts selector strategy based on detected interface language
 
 ## Profile Management
 AdsPower profiles are managed through their local API (default port 50325) with advanced selection features:
