@@ -28,7 +28,13 @@ class GoogleAdsCampaignBot:
         self.root.title("🚀 Google Ads Campaign Bot - AdsPower Integration")
         self.root.geometry("1400x900")
         self.root.configure(bg='#1a1a2e')
-        self.root.state('zoomed')  # Maximizar janela no Windows
+        
+        # Maximizar janela (multiplataforma)
+        try:
+            self.root.state('zoomed')  # Windows
+        except:
+            # Linux/Mac - definir tamanho máximo
+            self.root.geometry(f"{self.root.winfo_screenwidth()}x{self.root.winfo_screenheight()}+0+0")
         
         # Cores modernas
         self.colors = {
@@ -265,6 +271,22 @@ class GoogleAdsCampaignBot:
                                            font=('Segoe UI', 11, 'bold'), fg=self.colors['success'], bg=self.colors['primary'])
         self.selected_count_label.pack(side='right')
     
+    def on_profile_selected(self):
+        """Callback quando um perfil é selecionado/deselecionado"""
+        self.update_selected_profiles()
+        self.update_display_count()
+    
+    def update_display_count(self):
+        """Atualizar apenas a exibição do contador"""
+        count = len(self.selected_profiles)
+        
+        if count > 0:
+            self.selected_count_label.config(text=f"🎯 {count} selecionados", fg=self.colors['success'])
+            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
+        else:
+            self.selected_count_label.config(text="Nenhum selecionado", fg=self.colors['warning'])
+            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
+    
     def save_profile_selection(self):
         """💾 Salvar seleção atual de perfis"""
         try:
@@ -301,7 +323,8 @@ class GoogleAdsCampaignBot:
                     self.profile_vars[user_id].set(True)
                     loaded_count += 1
             
-            self.update_selected_count()
+            self.update_selected_profiles()
+            self.update_display_count()
             messagebox.showinfo("✅ Sucesso", f"Seleção de {loaded_count} perfis carregada com sucesso!")
             self.logger.info(f"Seleção de {loaded_count} perfis carregada de {self.config_file}")
             
@@ -323,7 +346,8 @@ class GoogleAdsCampaignBot:
                 if user_id in self.profile_vars:
                     self.profile_vars[user_id].set(True)
             
-            self.update_selected_count()
+            self.update_selected_profiles()
+            self.update_display_count()
             self.logger.info(f"Seleção automática carregada: {len(selected_ids)} perfis")
             
         except Exception as e:
@@ -452,57 +476,157 @@ class GoogleAdsCampaignBot:
         scrollbar.pack(side="right", fill="y")
     
     def setup_execution_tab(self, notebook):
-        """Configurar aba de execução e logs"""
+        """🚀 Configurar aba de execução MODERNA com botão no canto direito SEMPRE"""
         execution_frame = ttk.Frame(notebook)
-        notebook.add(execution_frame, text="▶️ Execução e Logs")
+        notebook.add(execution_frame, text="▶️ Execução")
         
-        # Frame de controle
-        control_frame = tk.Frame(execution_frame, bg='#ecf0f1', height=100)
-        control_frame.pack(fill='x', padx=10, pady=5)
+        # Container principal moderno
+        main_container = tk.Frame(execution_frame, bg=self.colors['dark'])
+        main_container.pack(fill='both', expand=True, padx=0, pady=0)
+        
+        # Header de controle MODERNO
+        control_frame = tk.Frame(main_container, bg=self.colors['primary'], height=120)
+        control_frame.pack(fill='x', padx=0, pady=0)
         control_frame.pack_propagate(False)
         
-        # Status
-        status_frame = tk.Frame(control_frame, bg='#ecf0f1')
-        status_frame.pack(side='left', fill='y', padx=10, pady=10)
+        # Container interno flexível
+        control_container = tk.Frame(control_frame, bg=self.colors['primary'])
+        control_container.pack(fill='both', expand=True, padx=20, pady=20)
         
-        tk.Label(status_frame, text="Status:", font=('Arial', 12, 'bold'), bg='#ecf0f1').pack(anchor='w')
-        self.status_label = tk.Label(status_frame, text="🟡 Aguardando", 
-                                    font=('Arial', 10), bg='#ecf0f1', fg='#f39c12')
-        self.status_label.pack(anchor='w')
+        # LADO ESQUERDO - Status e informações
+        left_section = tk.Frame(control_container, bg=self.colors['primary'])
+        left_section.pack(side='left', fill='y')
         
-        # Progresso
-        progress_frame = tk.Frame(control_frame, bg='#ecf0f1')
-        progress_frame.pack(side='left', fill='both', expand=True, padx=10, pady=10)
+        # Status atual
+        tk.Label(left_section, text="Status da Automação:", 
+                font=('Segoe UI', 14, 'bold'), fg=self.colors['light'], bg=self.colors['primary']).pack(anchor='w')
+        self.status_label = tk.Label(left_section, text="🟡 Aguardando Inicialização", 
+                                    font=('Segoe UI', 12), bg=self.colors['primary'], fg=self.colors['warning'])
+        self.status_label.pack(anchor='w', pady=(5, 15))
         
-        tk.Label(progress_frame, text="Progresso:", font=('Arial', 12, 'bold'), bg='#ecf0f1').pack(anchor='w')
-        self.progress_bar = ttk.Progressbar(progress_frame, mode='determinate')
-        self.progress_bar.pack(fill='x', pady=5)
+        # Informações de progresso
+        tk.Label(left_section, text="Progresso Geral:", 
+                font=('Segoe UI', 12, 'bold'), fg=self.colors['light'], bg=self.colors['primary']).pack(anchor='w')
+        self.progress_info_label = tk.Label(left_section, text="0 de 0 perfis processados", 
+                                          font=('Segoe UI', 10), bg=self.colors['primary'], fg=self.colors['accent'])
+        self.progress_info_label.pack(anchor='w')
         
-        # Botões de controle
-        button_frame = tk.Frame(control_frame, bg='#ecf0f1')
-        button_frame.pack(side='right', padx=10, pady=10)
+        # CENTRO - Barra de progresso moderna
+        center_section = tk.Frame(control_container, bg=self.colors['primary'])
+        center_section.pack(side='left', fill='both', expand=True, padx=30)
         
-        self.start_btn = tk.Button(button_frame, text="▶️ Iniciar Automação", 
+        progress_container = tk.Frame(center_section, bg=self.colors['primary'])
+        progress_container.pack(expand=True, fill='y')
+        
+        # Estilo moderno da barra de progresso
+        style = ttk.Style()
+        style.configure('Modern.Horizontal.TProgressbar',
+                       background=self.colors['success'],
+                       troughcolor=self.colors['secondary'],
+                       borderwidth=0,
+                       lightcolor=self.colors['success'],
+                       darkcolor=self.colors['success'])
+        
+        tk.Label(progress_container, text="Progresso da Execução:", 
+                font=('Segoe UI', 12, 'bold'), fg=self.colors['light'], bg=self.colors['primary']).pack(pady=(20, 5))
+        
+        self.progress_bar = ttk.Progressbar(progress_container, 
+                                          style='Modern.Horizontal.TProgressbar',
+                                          mode='determinate', length=300)
+        self.progress_bar.pack(pady=10)
+        
+        self.progress_percentage = tk.Label(progress_container, text="0%", 
+                                           font=('Segoe UI', 12, 'bold'), 
+                                           fg=self.colors['success'], bg=self.colors['primary'])
+        self.progress_percentage.pack()
+        
+        # LADO DIREITO - Botões de controle (SEMPRE NO CANTO DIREITO)
+        right_section = tk.Frame(control_container, bg=self.colors['primary'])
+        right_section.pack(side='right', fill='y')
+        
+        # Container dos botões fixo no canto direito
+        buttons_container = tk.Frame(right_section, bg=self.colors['primary'])
+        buttons_container.pack(expand=True, fill='y')
+        
+        # BOTÃO INICIAR - SEMPRE VISÍVEL NO CANTO DIREITO
+        self.start_btn = tk.Button(buttons_container, text="▶️ INICIAR AUTOMAÇÃO", 
                                   command=self.start_automation,
-                                  bg='#27ae60', fg='white', font=('Arial', 12, 'bold'))
-        self.start_btn.pack(pady=5)
+                                  bg=self.colors['success'], fg=self.colors['light'], 
+                                  font=('Segoe UI', 14, 'bold'),
+                                  relief='flat', padx=30, pady=15, cursor='hand2',
+                                  borderwidth=0, width=20)
+        self.start_btn.pack(pady=(10, 5))
         
-        self.stop_btn = tk.Button(button_frame, text="⏹️ Parar", 
+        # Botão Parar
+        self.stop_btn = tk.Button(buttons_container, text="⏹️ PARAR", 
                                  command=self.stop_automation,
-                                 bg='#e74c3c', fg='white', font=('Arial', 12, 'bold'),
-                                 state='disabled')
+                                 bg=self.colors['danger'], fg=self.colors['light'], 
+                                 font=('Segoe UI', 12, 'bold'),
+                                 relief='flat', padx=30, pady=10, cursor='hand2',
+                                 borderwidth=0, width=20, state='disabled')
         self.stop_btn.pack(pady=5)
         
-        # Área de logs
-        log_frame = tk.LabelFrame(execution_frame, text="📋 Logs de Execução", 
-                                 font=('Arial', 12, 'bold'))
-        log_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        # Botão Limpar Logs
+        clear_logs_btn = tk.Button(buttons_container, text="🗑️ Limpar Logs", 
+                                  command=self.clear_logs,
+                                  bg=self.colors['muted'], fg=self.colors['light'], 
+                                  font=('Segoe UI', 10, 'bold'),
+                                  relief='flat', padx=20, pady=8, cursor='hand2',
+                                  borderwidth=0, width=20)
+        clear_logs_btn.pack(pady=5)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=20, font=('Courier', 9))
+        # ÁREA DE LOGS MODERNA
+        log_container = tk.Frame(main_container, bg=self.colors['light'])
+        log_container.pack(fill='both', expand=True, padx=15, pady=15)
+        
+        # Header dos logs
+        log_header = tk.Frame(log_container, bg=self.colors['secondary'], height=40)
+        log_header.pack(fill='x', padx=0, pady=0)
+        log_header.pack_propagate(False)
+        
+        log_title = tk.Label(log_header, text="📋 Logs de Execução em Tempo Real", 
+                            font=('Segoe UI', 12, 'bold'), 
+                            fg=self.colors['light'], bg=self.colors['secondary'])
+        log_title.pack(side='left', padx=15, pady=10)
+        
+        # Timestamp dos logs
+        self.log_timestamp = tk.Label(log_header, text="Última atualização: --:--:--", 
+                                     font=('Segoe UI', 9), 
+                                     fg=self.colors['accent'], bg=self.colors['secondary'])
+        self.log_timestamp.pack(side='right', padx=15, pady=10)
+        
+        # Área de logs com estilo moderno
+        log_frame = tk.Frame(log_container, bg=self.colors['light'])
+        log_frame.pack(fill='both', expand=True, padx=0, pady=0)
+        
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=25, 
+                                                 font=('Consolas', 10),
+                                                 bg=self.colors['dark'], 
+                                                 fg=self.colors['light'],
+                                                 insertbackground=self.colors['accent'],
+                                                 selectbackground=self.colors['accent'],
+                                                 wrap=tk.WORD)
         self.log_text.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Adicionar handler personalizado para logs
+        # Configurar handler personalizado para logs
         self.setup_log_handler()
+        
+        # Configurar cores para logs
+        self.setup_log_colors()
+    
+    def clear_logs(self):
+        """Limpar logs da interface"""
+        self.log_text.delete(1.0, tk.END)
+        self.log_timestamp.config(text="Logs limpos")
+        self.logger.info("🗑️ Logs da interface limpos pelo usuário")
+    
+    def setup_log_colors(self):
+        """Configurar cores para diferentes tipos de log"""
+        self.log_text.tag_configure('INFO', foreground=self.colors['light'])
+        self.log_text.tag_configure('WARNING', foreground=self.colors['warning'])
+        self.log_text.tag_configure('ERROR', foreground=self.colors['danger'])
+        self.log_text.tag_configure('SUCCESS', foreground=self.colors['success'])
+        self.log_text.tag_configure('DEBUG', foreground=self.colors['muted'])
     
     def setup_settings_tab(self, notebook):
         """Configurar aba de configurações"""
@@ -602,7 +726,7 @@ class GoogleAdsCampaignBot:
                                         activebackground=self.colors['accent'],
                                         activeforeground=self.colors['light'],
                                         selectcolor=self.colors['success'],
-                                        command=self.update_selected_count,
+                                        command=self.on_profile_selected,
                                         cursor='hand2')
                 checkbox.pack(fill='x', padx=15, pady=8)
                 
@@ -635,12 +759,11 @@ class GoogleAdsCampaignBot:
         for profile in self.profiles:
             if self.profile_vars.get(profile['user_id'], tk.BooleanVar()).get():
                 self.selected_profiles.append(profile)
-        
-        self.update_selected_count()
     
     def update_selected_count(self):
         """Atualizar contador de perfis selecionados"""
-        self.update_selected_profiles()
+        # CORREÇÃO: Não chamar update_selected_profiles() aqui para evitar recursão
+        self.update_selected_profiles()  # Atualizar uma única vez
         count = len(self.selected_profiles)
         
         # Atualizar contador no canto direito
@@ -670,13 +793,15 @@ class GoogleAdsCampaignBot:
             checkbox = self.profile_checkboxes.get(user_id)
             if checkbox and checkbox.master.winfo_viewable():
                 var.set(True)
-        self.update_selected_count()
+        self.update_selected_profiles()
+        self.update_display_count()
     
     def deselect_all_profiles(self):
         """Deselecionar todos os perfis"""
         for var in self.profile_vars.values():
             var.set(False)
-        self.update_selected_count()
+        self.update_selected_profiles()
+        self.update_display_count()
     
     def save_campaign_config(self):
         """Salvar configuração da campanha"""
