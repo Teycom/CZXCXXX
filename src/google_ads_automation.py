@@ -151,40 +151,62 @@ class GoogleAdsAutomation:
                 chrome_options.add_argument('--headless')
                 self.logger.info("👻 Modo headless ativado")
             
-            # 🔧 CORREÇÃO 1 CORRIGIDA: Sanitizar selenium_address e usar chromedriver do AdsPower
-            self.logger.info("🔌 CONECTANDO ao AdsPower usando dados CORRETOS...")
+            # 🔧 CORREÇÃO REAL: Extrair debugger address CORRETAMENTE do AdsPower
+            self.logger.info("🔌 EXTRAINDO debugger address CORRETO do AdsPower...")
             
-            # Extrair e sanitizar selenium address
-            selenium_address = None
+            debugger_address = None
             
-            # Método 1: ws.selenium (sanitizar se necessário)
-            if 'ws' in browser_info and isinstance(browser_info['ws'], dict):
-                raw_selenium = browser_info['ws'].get('selenium', '')
-                if raw_selenium:
-                    # Sanitizar: extrair apenas host:port, remover ws:// se houver
-                    if raw_selenium.startswith('ws://'):
-                        # Extrair host:port do WebSocket URL
-                        import re
-                        match = re.search(r'ws://([^/]+)', raw_selenium)
-                        if match:
-                            selenium_address = match.group(1)
-                    else:
-                        # Já é host:port limpo
-                        selenium_address = raw_selenium
-                    
-                    self.logger.info(f"✅ SELENIUM ADDRESS sanitizado: {selenium_address}")
+            # Método 1: Usar debugger_address se já foi processado pelo adspower_manager
+            if 'debugger_address' in browser_info:
+                debugger_address = browser_info['debugger_address']
+                self.logger.info(f"✅ Debugger address já processado: {debugger_address}")
             
-            # Fallback: usar debug_port
-            if not selenium_address and 'debug_port' in browser_info:
+            # Método 2: Extrair de debug_port/debug_host se disponível
+            elif 'debug_port' in browser_info:
+                debug_host = browser_info.get('debug_host', '127.0.0.1')
                 debug_port = browser_info['debug_port']
-                selenium_address = f"127.0.0.1:{debug_port}"
-                self.logger.info(f"🔄 FALLBACK: Usando debug_port: {selenium_address}")
+                debugger_address = f"{debug_host}:{debug_port}"
+                self.logger.info(f"✅ Debugger address construído: {debugger_address}")
             
-            if not selenium_address:
-                self.logger.error("💥 ERRO: Nem selenium address nem debug_port encontrados!")
+            # Método 3: Extrair diretamente da URL WebSocket se disponível
+            elif 'ws' in browser_info and isinstance(browser_info['ws'], str):
+                ws_url = browser_info['ws']
+                self.logger.info(f"🔍 Extraindo porta da WebSocket URL: {ws_url}")
+                
+                import re
+                match = re.search(r'ws://([^:/]+):(\d+)', ws_url)
+                if match:
+                    host = match.group(1)
+                    port = match.group(2)
+                    debugger_address = f"{host}:{port}"
+                    self.logger.info(f"✅ Debugger address extraído da ws: {debugger_address}")
+                else:
+                    self.logger.warning(f"⚠️ Não foi possível extrair porta da URL: {ws_url}")
+            
+            # Fallback para portas comuns se tudo falhar
+            if not debugger_address:
+                self.logger.warning("⚠️ Usando fallback para portas comuns do Chrome...")
+                common_ports = [9222, 9223, 9224, 9225]
+                
+                for port in common_ports:
+                    try:
+                        test_url = f"http://127.0.0.1:{port}/json"
+                        import requests
+                        response = requests.get(test_url, timeout=2)
+                        if response.status_code == 200:
+                            debugger_address = f"127.0.0.1:{port}"
+                            self.logger.info(f"✅ Porta funcional encontrada: {debugger_address}")
+                            break
+                    except:
+                        continue
+            
+            if not debugger_address:
+                self.logger.error("💥 ERRO CRÍTICO: Não foi possível determinar debugger address!")
+                self.logger.error(f"📋 Dados disponíveis: {browser_info}")
                 return False
             
-            chrome_options.add_experimental_option("debuggerAddress", selenium_address)
+            self.logger.info(f"🎯 Configurando debuggerAddress: {debugger_address}")
+            chrome_options.add_experimental_option("debuggerAddress", debugger_address)
             
             # 🔧 CORREÇÃO 2 CORRIGIDA: Usar ChromeDriver do AdsPower primeiro
             self.logger.info("🚀 Criando WebDriver com ChromeDriver CORRETO...")

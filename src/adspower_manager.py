@@ -15,7 +15,7 @@ class AdsPowerManager:
     """Gerenciador de perfis do AdsPower"""
     
     def __init__(self, api_url: str = "http://localhost:50325"):
-        self.api_url = api_url.rstrip('/')
+        self.base_url = api_url.rstrip('/')  # Corrigir nome da variável
         self.logger = logging.getLogger(__name__)
         self.active_browsers = {}  # Armazenar browsers ativos
     
@@ -29,7 +29,7 @@ class AdsPowerManager:
                 'group_id': ''  # Deixar vazio para pegar de todos os grupos
             }
             
-            response = requests.get(f"{self.api_url}/api/v1/user/list", params=params)
+            response = requests.get(f"{self.base_url}/api/v1/user/list", params=params)
             response.raise_for_status()
             
             data = response.json()
@@ -76,10 +76,10 @@ class AdsPowerManager:
             }
             
             self.logger.info(f"📤 Enviando requisição para iniciar browser...")
-            self.logger.info(f"🎯 URL: {self.api_url}/api/v1/browser/start")
+            self.logger.info(f"🎯 URL: {self.base_url}/api/v1/browser/start")
             self.logger.info(f"📋 Parâmetros: {params}")
             
-            response = requests.get(f"{self.api_url}/api/v1/browser/start", params=params, timeout=30)
+            response = requests.get(f"{self.base_url}/api/v1/browser/start", params=params, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -150,7 +150,7 @@ class AdsPowerManager:
                 if not browser_functional:
                     try:
                         status_params = {'user_id': user_id}
-                        status_response = requests.get(f"{self.api_url}/api/v1/browser/active", params=status_params, timeout=10)
+                        status_response = requests.get(f"{self.base_url}/api/v1/browser/active", params=status_params, timeout=10)
                         
                         if status_response.status_code == 200:
                             status_data = status_response.json()
@@ -220,7 +220,7 @@ class AdsPowerManager:
         try:
             params = {'user_id': user_id}
             
-            response = requests.get(f"{self.api_url}/api/v1/browser/stop", params=params)
+            response = requests.get(f"{self.base_url}/api/v1/browser/stop", params=params)
             response.raise_for_status()
             
             data = response.json()
@@ -246,7 +246,7 @@ class AdsPowerManager:
         """Verificar se o browser está ativo"""
         try:
             params = {'user_id': user_id}
-            response = requests.get(f"{self.api_url}/api/v1/browser/active", params=params)
+            response = requests.get(f"{self.base_url}/api/v1/browser/active", params=params)
             response.raise_for_status()
             
             data = response.json()
@@ -282,7 +282,7 @@ class AdsPowerManager:
                 'pa_config': kwargs.get('pa_config', {})
             }
             
-            response = requests.post(f"{self.api_url}/api/v1/user/create", json=profile_data)
+            response = requests.post(f"{self.base_url}/api/v1/user/create", json=profile_data)
             response.raise_for_status()
             
             data = response.json()
@@ -306,7 +306,7 @@ class AdsPowerManager:
                 self.stop_browser(user_id)
             
             params = {'user_ids': [user_id]}
-            response = requests.post(f"{self.api_url}/api/v1/user/delete", json=params)
+            response = requests.post(f"{self.base_url}/api/v1/user/delete", json=params)
             response.raise_for_status()
             
             data = response.json()
@@ -327,7 +327,7 @@ class AdsPowerManager:
             update_data = {'user_id': user_id}
             update_data.update(kwargs)
             
-            response = requests.post(f"{self.api_url}/api/v1/user/update", json=update_data)
+            response = requests.post(f"{self.base_url}/api/v1/user/update", json=update_data)
             response.raise_for_status()
             
             data = response.json()
@@ -346,7 +346,7 @@ class AdsPowerManager:
         """Obter informações detalhadas de um perfil"""
         try:
             params = {'user_id': user_id}
-            response = requests.get(f"{self.api_url}/api/v1/user/info", params=params)
+            response = requests.get(f"{self.base_url}/api/v1/user/info", params=params)
             response.raise_for_status()
             
             data = response.json()
