@@ -1,1026 +1,737 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Google Ads Campaign Automation Bot with AdsPower Integration
-Aplicativo Desktop para Automação de Campanhas do Google Ads
-
-Este é o arquivo principal que executa a interface gráfica do usuário.
-Para executar: python main.py
+Google Ads Campaign Bot - Interface Principal
+Bot para automação de criação de campanhas no Google Ads via AdsPower
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, filedialog
+from tkinter import ttk, messagebox, filedialog
 import threading
 import json
 import os
 import time
 from datetime import datetime
-import logging
+from typing import Dict, List, Optional, Any
+import traceback
 
+# Imports locais
 from adspower_manager import AdsPowerManager
 from google_ads_automation import GoogleAdsAutomation
-from logger import setup_logger
-from config import Config
+from config import get_config
+from logger import setup_logger, get_logger
 
 class GoogleAdsCampaignBot:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("🚀 Google Ads Campaign Bot - AdsPower Integration")
-        self.root.geometry("1400x900")
-        self.root.configure(bg='#1a1a2e')
-        
-        # Maximizar janela (multiplataforma)
-        try:
-            self.root.state('zoomed')  # Windows
-        except:
-            # Linux/Mac - definir tamanho máximo
-            self.root.geometry(f"{self.root.winfo_screenwidth()}x{self.root.winfo_screenheight()}+0+0")
-        
-        # Cores modernas
-        self.colors = {
-            'primary': '#16213e',
-            'secondary': '#0f3460', 
-            'accent': '#53a8b6',
-            'success': '#5cb85c',
-            'warning': '#f0ad4e',
-            'danger': '#d9534f',
-            'light': '#ffffff',
-            'dark': '#1a1a2e',
-            'muted': '#6c757d'
-        }
+    """Interface principal do bot de campanhas do Google Ads"""
+    
+    def __init__(self):
+        # Configurar logging
+        self.logger = setup_logger()
+        self.config = get_config()
         
         # Inicializar componentes
-        self.config = Config()
-        self.logger = setup_logger()
-        self.adspower_manager = AdsPowerManager(enable_advanced_retry=self.config.adspower.advanced_retry_enabled)
-        self.automation = GoogleAdsAutomation(enable_advanced_retry=self.config.adspower.advanced_retry_enabled)
+        self.adspower_manager = AdsPowerManager(
+            api_url=self.config.adspower.api_url,
+            enable_advanced_retry=self.config.adspower.advanced_retry_enabled
+        )
         
-        # Variáveis de estado
+        # Estado da aplicação
         self.profiles = []
         self.selected_profiles = []
-        self.campaign_config = {}
-        self.is_running = False
-        self.config_file = 'selected_profiles.json'  # Arquivo para persistir seleções
+        self.automation_running = False
+        self.automation_thread = None
         
-        self.setup_ui()
-        self.refresh_profiles()
+        # Configurações da campanha
+        self.campaign_config = {
+            'name': '',
+            'objective': 'Vendas',
+            'budget': '50',
+            'locations': ['Brasil'],
+            'titles': [],
+            'descriptions': [],
+            'keywords': [],
+            'final_url': ''
+        }
+        
+        # Criar interface
+        self.setup_gui()
+        
+        # Carregar perfis automaticamente
+        self.load_profiles()
+        
+        self.logger.info("🚀 Google Ads Campaign Bot inicializado com sucesso!")
     
-    def setup_ui(self):
-        """Configurar a interface do usuário"""
+    def setup_gui(self):
+        """🎨 CONFIGURAR interface gráfica moderna"""
+        self.root = tk.Tk()
+        self.root.title("Google Ads Campaign Bot v1.0")
+        self.root.geometry("1200x800")
+        self.root.configure(bg='#f0f0f0')
         
-        # Header moderno com gradiente visual
-        title_frame = tk.Frame(self.root, bg=self.colors['primary'], height=80)
-        title_frame.pack(fill='x', padx=0, pady=0)
-        title_frame.pack_propagate(False)
-        
-        # Logo e título
-        title_container = tk.Frame(title_frame, bg=self.colors['primary'])
-        title_container.pack(expand=True, fill='both')
-        
-        title_label = tk.Label(title_container, text="🚀 Google Ads Campaign Bot", 
-                              font=('Segoe UI', 24, 'bold'), 
-                              fg=self.colors['light'], bg=self.colors['primary'])
-        title_label.pack(side='left', padx=20, pady=20)
-        
-        subtitle_label = tk.Label(title_container, text="Automação Profissional com AdsPower", 
-                                 font=('Segoe UI', 12), 
-                                 fg=self.colors['accent'], bg=self.colors['primary'])
-        subtitle_label.pack(side='left', padx=(0, 20), pady=20)
-        
-        # Status de conexão
-        self.connection_status = tk.Label(title_container, text="🔄 Verificando conexão...", 
-                                         font=('Segoe UI', 10), 
-                                         fg=self.colors['warning'], bg=self.colors['primary'])
-        self.connection_status.pack(side='right', padx=20, pady=20)
-        
-        # Configurar estilo moderno das abas
+        # Configurar estilo
         style = ttk.Style()
         style.theme_use('clam')
         
-        style.configure('Modern.TNotebook', background=self.colors['dark'], borderwidth=0)
-        style.configure('Modern.TNotebook.Tab', 
-                       background=self.colors['secondary'], 
-                       foreground=self.colors['light'],
-                       padding=[20, 10],
-                       font=('Segoe UI', 11, 'bold'))
-        style.map('Modern.TNotebook.Tab',
-                 background=[('selected', self.colors['accent']),
-                           ('active', self.colors['primary'])],
-                 foreground=[('selected', self.colors['light'])])
+        # Cores modernas
+        style.configure('Title.TLabel', font=('Arial', 16, 'bold'), background='#f0f0f0')
+        style.configure('Heading.TLabel', font=('Arial', 12, 'bold'), background='#f0f0f0')
+        style.configure('Modern.TButton', font=('Arial', 10, 'bold'))
+        style.configure('Success.TButton', background='#28a745', foreground='white')
+        style.configure('Danger.TButton', background='#dc3545', foreground='white')
         
-        # Frame principal com abas
-        notebook = ttk.Notebook(self.root, style='Modern.TNotebook')
-        notebook.pack(fill='both', expand=True, padx=15, pady=15)
+        # Frame principal
+        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Aba 1: Configuração de Perfis
-        self.setup_profiles_tab(notebook)
+        # Configurar grid
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
         
-        # Aba 2: Configuração de Campanhas
-        self.setup_campaign_tab(notebook)
+        # Título
+        title_label = ttk.Label(main_frame, text="🚀 Google Ads Campaign Bot", style='Title.TLabel')
+        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
-        # Aba 3: Execução e Logs
-        self.setup_execution_tab(notebook)
+        # Frame de configuração da campanha
+        self.setup_campaign_config_frame(main_frame)
         
-        # Aba 4: Configurações
-        self.setup_settings_tab(notebook)
+        # Frame de seleção de perfis
+        self.setup_profiles_frame(main_frame)
+        
+        # Frame de controles
+        self.setup_controls_frame(main_frame)
+        
+        # Frame de status
+        self.setup_status_frame(main_frame)
     
-    def setup_profiles_tab(self, notebook):
-        """Configurar aba de perfis do AdsPower - MODERNA E RESPONSIVA"""
-        profiles_frame = ttk.Frame(notebook)
-        notebook.add(profiles_frame, text="👥 Perfis AdsPower")
-        
-        # Container principal moderno
-        main_container = tk.Frame(profiles_frame, bg=self.colors['dark'])
-        main_container.pack(fill='both', expand=True, padx=0, pady=0)
-        
-        # Header moderno com ações
-        header_frame = tk.Frame(main_container, bg=self.colors['primary'], height=80)
-        header_frame.pack(fill='x', padx=0, pady=0)
-        header_frame.pack_propagate(False)
-        
-        # Título e informações
-        info_container = tk.Frame(header_frame, bg=self.colors['primary'])
-        info_container.pack(side='left', fill='y', padx=20, pady=15)
-        
-        header_label = tk.Label(info_container, text="👥 Gerenciamento de Perfis", 
-                               font=('Segoe UI', 16, 'bold'), fg=self.colors['light'], bg=self.colors['primary'])
-        header_label.pack(anchor='w')
-        
-        self.profiles_info_label = tk.Label(info_container, text="Carregando perfis...", 
-                                           font=('Segoe UI', 10), fg=self.colors['accent'], bg=self.colors['primary'])
-        self.profiles_info_label.pack(anchor='w')
-        
-        # Botões de ação modernos
-        action_container = tk.Frame(header_frame, bg=self.colors['primary'])
-        action_container.pack(side='right', padx=20, pady=15)
-        
-        # Botão Atualizar
-        refresh_btn = tk.Button(action_container, text="🔄 Atualizar", 
-                               command=self.refresh_profiles,
-                               bg=self.colors['accent'], fg=self.colors['light'], 
-                               font=('Segoe UI', 10, 'bold'),
-                               relief='flat', padx=20, pady=8, cursor='hand2',
-                               borderwidth=0)
-        refresh_btn.pack(side='right', padx=5)
-        
-        # Botão Salvar Seleção
-        save_btn = tk.Button(action_container, text="💾 Salvar Seleção", 
-                            command=self.save_profile_selection,
-                            bg=self.colors['success'], fg=self.colors['light'], 
-                            font=('Segoe UI', 10, 'bold'),
-                            relief='flat', padx=20, pady=8, cursor='hand2',
-                            borderwidth=0)
-        save_btn.pack(side='right', padx=5)
-        
-        # Botão Carregar Seleção
-        load_btn = tk.Button(action_container, text="📁 Carregar", 
-                            command=self.load_profile_selection,
-                            bg=self.colors['warning'], fg=self.colors['light'], 
-                            font=('Segoe UI', 10, 'bold'),
-                            relief='flat', padx=20, pady=8, cursor='hand2',
-                            borderwidth=0)
-        load_btn.pack(side='right', padx=5)
-        
-        # Barra de busca moderna
-        search_frame = tk.Frame(main_container, bg=self.colors['secondary'], height=60)
-        search_frame.pack(fill='x', padx=0, pady=0)
-        search_frame.pack_propagate(False)
-        
-        search_container = tk.Frame(search_frame, bg=self.colors['secondary'])
-        search_container.pack(expand=True, fill='both', padx=20, pady=15)
-        
-        # Ícone de busca
-        search_icon = tk.Label(search_container, text="🔍", font=('Segoe UI', 14), 
-                              fg=self.colors['accent'], bg=self.colors['secondary'])
-        search_icon.pack(side='left', padx=(0, 10))
-        
-        # Campo de busca estilizado
-        self.search_entry = tk.Entry(search_container, font=('Segoe UI', 12), width=40,
-                                    bg=self.colors['light'], fg=self.colors['dark'],
-                                    relief='flat', bd=8)
-        self.search_entry.pack(side='left', padx=5, ipady=5)
-        self.search_entry.bind('<KeyRelease>', self.filter_profiles)
-        self.search_entry.insert(0, "Digite para buscar perfis...")
-        self.search_entry.bind('<FocusIn>', self.clear_search_placeholder)
-        self.search_entry.bind('<FocusOut>', self.restore_search_placeholder)
-        
-        # Botões de seleção em massa modernos
-        buttons_container = tk.Frame(search_container, bg=self.colors['secondary'])
-        buttons_container.pack(side='right', padx=10)
-        
-        select_all_btn = tk.Button(buttons_container, text="✅ Todos", 
-                                  command=self.select_all_profiles,
-                                  bg=self.colors['success'], fg=self.colors['light'], 
-                                  font=('Segoe UI', 10, 'bold'),
-                                  relief='flat', padx=15, pady=6, cursor='hand2',
-                                  borderwidth=0)
-        select_all_btn.pack(side='left', padx=3)
-        
-        deselect_all_btn = tk.Button(buttons_container, text="❌ Limpar", 
-                                    command=self.deselect_all_profiles,
-                                    bg=self.colors['danger'], fg=self.colors['light'], 
-                                    font=('Segoe UI', 10, 'bold'),
-                                    relief='flat', padx=15, pady=6, cursor='hand2',
-                                    borderwidth=0)
-        deselect_all_btn.pack(side='left', padx=3)
-        
-        # Container de perfis com design moderno
-        profiles_container = tk.Frame(main_container, bg=self.colors['light'])
-        profiles_container.pack(fill='both', expand=True, padx=15, pady=15)
-        
-        # Frame principal com scrollbar para checkboxes
-        main_frame = tk.Frame(profiles_container, bg=self.colors['light'])
-        main_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        # Canvas e scrollbar modernos para muitos perfis
-        self.profiles_canvas = tk.Canvas(main_frame, bg=self.colors['light'], highlightthickness=0, bd=0)
-        scrollbar = tk.Scrollbar(main_frame, orient='vertical', command=self.profiles_canvas.yview,
-                                bg=self.colors['secondary'], troughcolor=self.colors['light'],
-                                activebackground=self.colors['accent'])
-        self.profiles_scrollable_frame = tk.Frame(self.profiles_canvas, bg=self.colors['light'])
-        
-        self.profiles_scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.profiles_canvas.configure(scrollregion=self.profiles_canvas.bbox("all"))
-        )
-        
-        self.profiles_canvas.create_window((0, 0), window=self.profiles_scrollable_frame, anchor="nw")
-        self.profiles_canvas.configure(yscrollcommand=scrollbar.set)
-        
-        self.profiles_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Variáveis para checkboxes dos perfis
-        self.profile_vars = {}
-        self.profile_checkboxes = {}
-        
-        # Status no rodapé moderno
-        status_frame = tk.Frame(main_container, bg=self.colors['primary'], height=50)
-        status_frame.pack(fill='x', padx=0, pady=0)
-        status_frame.pack_propagate(False)
-        
-        status_container = tk.Frame(status_frame, bg=self.colors['primary'])
-        status_container.pack(expand=True, fill='both', padx=20, pady=12)
-        
-        self.profiles_status_label = tk.Label(status_container, text="🔄 Aguardando carregamento de perfis...", 
-                                             font=('Segoe UI', 11, 'bold'), fg=self.colors['accent'], bg=self.colors['primary'])
-        self.profiles_status_label.pack(side='left')
-        
-        # Contador de selecionados no canto direito
-        self.selected_count_label = tk.Label(status_container, text="0 selecionados", 
-                                           font=('Segoe UI', 11, 'bold'), fg=self.colors['success'], bg=self.colors['primary'])
-        self.selected_count_label.pack(side='right')
-    
-    def on_profile_selected(self):
-        """Callback quando um perfil é selecionado/deselecionado"""
-        self.update_selected_profiles()
-        self.update_display_count()
-    
-    def update_display_count(self):
-        """Atualizar apenas a exibição do contador"""
-        count = len(self.selected_profiles)
-        
-        if count > 0:
-            self.selected_count_label.config(text=f"🎯 {count} selecionados", fg=self.colors['success'])
-            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
-        else:
-            self.selected_count_label.config(text="Nenhum selecionado", fg=self.colors['warning'])
-            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
-    
-    def save_profile_selection(self):
-        """💾 Salvar seleção atual de perfis"""
-        try:
-            self.update_selected_profiles()
-            selected_ids = [profile['user_id'] for profile in self.selected_profiles]
-            
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(selected_ids, f, indent=2)
-            
-            messagebox.showinfo("✅ Sucesso", f"Seleção de {len(selected_ids)} perfis salva com sucesso!")
-            self.logger.info(f"Seleção de {len(selected_ids)} perfis salva em {self.config_file}")
-            
-        except Exception as e:
-            messagebox.showerror("❌ Erro", f"Erro ao salvar seleção: {str(e)}")
-            self.logger.error(f"Erro ao salvar seleção: {str(e)}")
-    
-    def load_profile_selection(self):
-        """📁 Carregar seleção salva de perfis"""
-        try:
-            if not os.path.exists(self.config_file):
-                messagebox.showinfo("ℹ️ Informação", "Nenhuma seleção salva encontrada.")
-                return
-            
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                selected_ids = json.load(f)
-            
-            # Desmarcar todos primeiro
-            self.deselect_all_profiles()
-            
-            # Marcar os salvos
-            loaded_count = 0
-            for user_id in selected_ids:
-                if user_id in self.profile_vars:
-                    self.profile_vars[user_id].set(True)
-                    loaded_count += 1
-            
-            self.update_selected_profiles()
-            self.update_display_count()
-            messagebox.showinfo("✅ Sucesso", f"Seleção de {loaded_count} perfis carregada com sucesso!")
-            self.logger.info(f"Seleção de {loaded_count} perfis carregada de {self.config_file}")
-            
-        except Exception as e:
-            messagebox.showerror("❌ Erro", f"Erro ao carregar seleção: {str(e)}")
-            self.logger.error(f"Erro ao carregar seleção: {str(e)}")
-    
-    def load_profile_selection_auto(self):
-        """🔄 Carregar seleção automaticamente (silencioso)"""
-        try:
-            if not os.path.exists(self.config_file):
-                return
-            
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                selected_ids = json.load(f)
-            
-            # Marcar os salvos
-            for user_id in selected_ids:
-                if user_id in self.profile_vars:
-                    self.profile_vars[user_id].set(True)
-            
-            self.update_selected_profiles()
-            self.update_display_count()
-            self.logger.info(f"Seleção automática carregada: {len(selected_ids)} perfis")
-            
-        except Exception as e:
-            self.logger.warning(f"Não foi possível carregar seleção automática: {str(e)}")
-    
-    def clear_search_placeholder(self, event):
-        """Limpar placeholder do campo de busca"""
-        if self.search_entry.get() == "Digite para buscar perfis...":
-            self.search_entry.delete(0, tk.END)
-            self.search_entry.config(fg=self.colors['dark'])
-    
-    def restore_search_placeholder(self, event):
-        """Restaurar placeholder se campo estiver vazio"""
-        if not self.search_entry.get().strip():
-            self.search_entry.insert(0, "Digite para buscar perfis...")
-            self.search_entry.config(fg=self.colors['muted'])
-    
-    def setup_campaign_tab(self, notebook):
-        """Configurar aba de configuração de campanhas"""
-        campaign_frame = ttk.Frame(notebook)
-        notebook.add(campaign_frame, text="📈 Configuração de Campanha")
-        
-        # Frame com scroll
-        canvas = tk.Canvas(campaign_frame)
-        scrollbar = ttk.Scrollbar(campaign_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Configurações básicas da campanha
-        basic_frame = tk.LabelFrame(scrollable_frame, text="📋 Configurações Básicas", 
-                                   font=('Arial', 12, 'bold'), padx=10, pady=10)
-        basic_frame.pack(fill='x', padx=10, pady=5)
+    def setup_campaign_config_frame(self, parent):
+        """⚙️ CONFIGURAR frame de configuração da campanha"""
+        config_frame = ttk.LabelFrame(parent, text="📋 Configuração da Campanha", padding="15")
+        config_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        config_frame.columnconfigure(1, weight=1)
+        config_frame.columnconfigure(3, weight=1)
         
         # Nome da campanha
-        tk.Label(basic_frame, text="Nome da Campanha:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
-        self.campaign_name_entry = tk.Entry(basic_frame, width=50, font=('Arial', 10))
-        self.campaign_name_entry.grid(row=0, column=1, padx=10, pady=5)
+        ttk.Label(config_frame, text="Nome da Campanha:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        self.campaign_name_var = tk.StringVar(value="Campanha Teste")
+        ttk.Entry(config_frame, textvariable=self.campaign_name_var, width=30).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 20))
         
-        # Orçamento diário
-        tk.Label(basic_frame, text="Orçamento Diário (R$):", font=('Arial', 10)).grid(row=1, column=0, sticky='w', pady=5)
-        self.budget_entry = tk.Entry(basic_frame, width=20, font=('Arial', 10))
-        self.budget_entry.grid(row=1, column=1, sticky='w', padx=10, pady=5)
+        # Objetivo
+        ttk.Label(config_frame, text="Objetivo:").grid(row=0, column=2, sticky=tk.W, padx=(0, 10))
+        self.objective_var = tk.StringVar(value="Vendas")
+        objective_combo = ttk.Combobox(config_frame, textvariable=self.objective_var, width=25)
+        objective_combo['values'] = ('Vendas', 'Leads', 'Tráfego do site', 'Sem orientação')
+        objective_combo.grid(row=0, column=3, sticky=(tk.W, tk.E))
+        objective_combo.state(['readonly'])
         
-        # Tipo de campanha (apenas pesquisa)
-        tk.Label(basic_frame, text="Tipo de Campanha:", font=('Arial', 10)).grid(row=2, column=0, sticky='w', pady=5)
-        self.campaign_type_label = tk.Label(basic_frame, text="🔍 Pesquisa (Google Search)", 
-                                           font=('Arial', 10, 'bold'), fg='#2c3e50')
-        self.campaign_type_label.grid(row=2, column=1, sticky='w', padx=10, pady=5)
+        # Orçamento
+        ttk.Label(config_frame, text="Orçamento Diário (R$):").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        self.budget_var = tk.StringVar(value="50")
+        ttk.Entry(config_frame, textvariable=self.budget_var, width=30).grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(0, 20), pady=(10, 0))
         
-        # Palavras-chave
-        keywords_frame = tk.LabelFrame(scrollable_frame, text="🎯 Palavras-chave", 
-                                      font=('Arial', 12, 'bold'), padx=10, pady=10)
-        keywords_frame.pack(fill='x', padx=10, pady=5)
+        # URL final
+        ttk.Label(config_frame, text="URL Final:").grid(row=1, column=2, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        self.final_url_var = tk.StringVar(value="https://exemplo.com")
+        ttk.Entry(config_frame, textvariable=self.final_url_var, width=25).grid(row=1, column=3, sticky=(tk.W, tk.E), pady=(10, 0))
         
-        tk.Label(keywords_frame, text="Palavras-chave (uma por linha):", font=('Arial', 10)).pack(anchor='w')
-        self.keywords_text = scrolledtext.ScrolledText(keywords_frame, height=8, width=80, font=('Arial', 10))
-        self.keywords_text.pack(fill='x', padx=5, pady=5)
+        # Localizações
+        ttk.Label(config_frame, text="Localizações:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        self.locations_var = tk.StringVar(value="Brasil")
+        ttk.Entry(config_frame, textvariable=self.locations_var, width=30).grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(0, 20), pady=(10, 0))
         
-        # Idioma e Localização
-        location_frame = tk.LabelFrame(scrollable_frame, text="🌍 Segmentação Geográfica e Idioma", 
-                                      font=('Arial', 12, 'bold'), padx=10, pady=10)
-        location_frame.pack(fill='x', padx=10, pady=5)
-        
-        # Idioma
-        tk.Label(location_frame, text="Idioma da Campanha:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
-        self.language_combo = ttk.Combobox(location_frame, width=30, 
-                                          values=["Português (Brasil)", "Português (Portugal)", "Inglês (EUA)", 
-                                                 "Inglês (Reino Unido)", "Espanhol", "Francês", "Italiano", "Alemão"])
-        self.language_combo.set("Português (Brasil)")
-        self.language_combo.grid(row=0, column=1, sticky='w', padx=10, pady=5)
-        
-        # Localizações (múltiplas)
-        tk.Label(location_frame, text="Localizações (uma por linha):", font=('Arial', 10)).grid(row=1, column=0, sticky='nw', pady=5)
-        self.locations_text = scrolledtext.ScrolledText(location_frame, height=4, width=50, font=('Arial', 10))
-        self.locations_text.grid(row=1, column=1, padx=10, pady=5, sticky='ew')
-        self.locations_text.insert(1.0, "Brasil\nSão Paulo, Brasil\nRio de Janeiro, Brasil")
-        
-        location_frame.grid_columnconfigure(1, weight=1)
-        
-        # Anúncios com múltiplos títulos
-        ads_frame = tk.LabelFrame(scrollable_frame, text="📝 Configuração dos Anúncios (Até 15 Títulos)", 
-                                 font=('Arial', 12, 'bold'), padx=10, pady=10)
-        ads_frame.pack(fill='x', padx=10, pady=5)
-        
-        # Títulos dos anúncios (até 15)
-        tk.Label(ads_frame, text="Títulos dos Anúncios (um por linha, até 15):", font=('Arial', 10)).grid(row=0, column=0, sticky='nw', pady=5)
-        self.ad_titles_text = scrolledtext.ScrolledText(ads_frame, height=8, width=60, font=('Arial', 10))
-        self.ad_titles_text.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
-        self.ad_titles_text.insert(1.0, "Seu Produto Incrivel Aqui\nOferta Especial Limitada\nSolução Perfeita Para Você")
-        
-        # Descrições (até 4)
-        tk.Label(ads_frame, text="Descrições (uma por linha, até 4):", font=('Arial', 10)).grid(row=1, column=0, sticky='nw', pady=5)
-        self.ad_descriptions_text = scrolledtext.ScrolledText(ads_frame, height=4, width=60, font=('Arial', 10))
-        self.ad_descriptions_text.grid(row=1, column=1, padx=10, pady=5, sticky='ew')
-        self.ad_descriptions_text.insert(1.0, "Descubra a melhor solução do mercado. Qualidade garantida!\nCompre agora e economize até 50%. Entrega rápida em todo Brasil.")
-        
-        # URL de destino
-        tk.Label(ads_frame, text="URL de Destino:", font=('Arial', 10)).grid(row=2, column=0, sticky='w', pady=5)
-        self.landing_url_entry = tk.Entry(ads_frame, width=60, font=('Arial', 10))
-        self.landing_url_entry.grid(row=2, column=1, padx=10, pady=5, sticky='ew')
-        
-        ads_frame.grid_columnconfigure(1, weight=1)
-        
-        # Botões de ação
-        action_frame = tk.Frame(scrollable_frame)
-        action_frame.pack(fill='x', padx=10, pady=20)
-        
-        save_config_btn = tk.Button(action_frame, text="💾 Salvar Configuração", 
-                                   command=self.save_campaign_config,
-                                   bg='#f39c12', fg='white', font=('Arial', 11, 'bold'))
-        save_config_btn.pack(side='left', padx=5)
-        
-        load_config_btn = tk.Button(action_frame, text="📂 Carregar Configuração", 
-                                   command=self.load_campaign_config,
-                                   bg='#9b59b6', fg='white', font=('Arial', 11, 'bold'))
-        load_config_btn.pack(side='left', padx=5)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Títulos dos anúncios
+        ttk.Label(config_frame, text="Títulos (separados por ;):").grid(row=2, column=2, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        self.titles_var = tk.StringVar(value="Título 1; Título 2; Título 3")
+        ttk.Entry(config_frame, textvariable=self.titles_var, width=25).grid(row=2, column=3, sticky=(tk.W, tk.E), pady=(10, 0))
     
-    def setup_execution_tab(self, notebook):
-        """🚀 Configurar aba de execução MODERNA com botão no canto direito SEMPRE"""
-        execution_frame = ttk.Frame(notebook)
-        notebook.add(execution_frame, text="▶️ Execução")
+    def setup_profiles_frame(self, parent):
+        """👥 CONFIGURAR frame de seleção de perfis"""
+        profiles_frame = ttk.LabelFrame(parent, text="👥 Seleção de Perfis AdsPower", padding="15")
+        profiles_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 15))
+        profiles_frame.columnconfigure(0, weight=1)
+        profiles_frame.rowconfigure(1, weight=1)
         
-        # Container principal moderno
-        main_container = tk.Frame(execution_frame, bg=self.colors['dark'])
-        main_container.pack(fill='both', expand=True, padx=0, pady=0)
+        # Controles superiores
+        controls_frame = ttk.Frame(profiles_frame)
+        controls_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        controls_frame.columnconfigure(2, weight=1)
         
-        # Header de controle MODERNO
-        control_frame = tk.Frame(main_container, bg=self.colors['primary'], height=120)
-        control_frame.pack(fill='x', padx=0, pady=0)
-        control_frame.pack_propagate(False)
+        # Botões de controle
+        ttk.Button(controls_frame, text="🔄 Recarregar Perfis", command=self.load_profiles).grid(row=0, column=0, padx=(0, 10))
+        ttk.Button(controls_frame, text="✅ Selecionar Todos", command=self.select_all_profiles).grid(row=0, column=1, padx=(0, 10))
+        ttk.Button(controls_frame, text="❌ Desmarcar Todos", command=self.deselect_all_profiles).grid(row=0, column=2, padx=(0, 10))
         
-        # Container interno flexível
-        control_container = tk.Frame(control_frame, bg=self.colors['primary'])
-        control_container.pack(fill='both', expand=True, padx=20, pady=20)
+        # Campo de busca
+        ttk.Label(controls_frame, text="🔍 Buscar:").grid(row=0, column=3, padx=(20, 5))
+        self.search_var = tk.StringVar()
+        self.search_var.trace('w', self.filter_profiles)
+        search_entry = ttk.Entry(controls_frame, textvariable=self.search_var, width=20)
+        search_entry.grid(row=0, column=4, padx=(0, 10))
         
-        # LADO ESQUERDO - Status e informações
-        left_section = tk.Frame(control_container, bg=self.colors['primary'])
-        left_section.pack(side='left', fill='y')
+        # Contador de selecionados
+        self.selected_count_var = tk.StringVar(value="Selecionados: 0")
+        ttk.Label(controls_frame, textvariable=self.selected_count_var, font=('Arial', 10, 'bold')).grid(row=0, column=5, padx=(20, 0))
+        
+        # Lista de perfis com scrollbar
+        list_frame = ttk.Frame(profiles_frame)
+        list_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        
+        # Treeview para perfis
+        columns = ('select', 'name', 'id', 'group', 'status')
+        self.profiles_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=15)
+        
+        # Configurar colunas
+        self.profiles_tree.heading('select', text='✓')
+        self.profiles_tree.heading('name', text='Nome do Perfil')
+        self.profiles_tree.heading('id', text='ID')
+        self.profiles_tree.heading('group', text='Grupo')
+        self.profiles_tree.heading('status', text='Status')
+        
+        self.profiles_tree.column('select', width=50, anchor='center')
+        self.profiles_tree.column('name', width=300)
+        self.profiles_tree.column('id', width=100)
+        self.profiles_tree.column('group', width=150)
+        self.profiles_tree.column('status', width=100)
+        
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.profiles_tree.yview)
+        h_scrollbar = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=self.profiles_tree.xview)
+        self.profiles_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        # Grid dos componentes
+        self.profiles_tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        v_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        h_scrollbar.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        
+        # Bind para seleção
+        self.profiles_tree.bind('<Button-1>', self.on_profile_click)
+        self.profiles_tree.bind('<Double-1>', self.on_profile_double_click)
+    
+    def setup_controls_frame(self, parent):
+        """🎮 CONFIGURAR frame de controles"""
+        controls_frame = ttk.Frame(parent)
+        controls_frame.grid(row=3, column=0, columnspan=3, pady=(0, 15))
+        
+        # Botões principais
+        self.start_button = ttk.Button(
+            controls_frame, 
+            text="🚀 Iniciar Automação", 
+            command=self.start_automation,
+            style='Success.TButton'
+        )
+        self.start_button.grid(row=0, column=0, padx=(0, 10))
+        
+        self.stop_button = ttk.Button(
+            controls_frame, 
+            text="⏹️ Parar Automação", 
+            command=self.stop_automation,
+            style='Danger.TButton',
+            state='disabled'
+        )
+        self.stop_button.grid(row=0, column=1, padx=(0, 10))
+        
+        # Botões auxiliares
+        ttk.Button(controls_frame, text="💾 Salvar Configuração", command=self.save_config).grid(row=0, column=2, padx=(0, 10))
+        ttk.Button(controls_frame, text="📂 Carregar Configuração", command=self.load_config).grid(row=0, column=3, padx=(0, 10))
+        ttk.Button(controls_frame, text="📊 Ver Logs", command=self.show_logs).grid(row=0, column=4, padx=(0, 10))
+    
+    def setup_status_frame(self, parent):
+        """📊 CONFIGURAR frame de status"""
+        status_frame = ttk.LabelFrame(parent, text="📊 Status da Automação", padding="15")
+        status_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 0))
+        status_frame.columnconfigure(0, weight=1)
+        
+        # Área de texto para logs
+        text_frame = ttk.Frame(status_frame)
+        text_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        text_frame.columnconfigure(0, weight=1)
+        text_frame.rowconfigure(0, weight=1)
+        
+        self.status_text = tk.Text(text_frame, height=10, wrap=tk.WORD, font=('Consolas', 9))
+        status_scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.status_text.yview)
+        self.status_text.configure(yscrollcommand=status_scrollbar.set)
+        
+        self.status_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        status_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # Barra de progresso
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, maximum=100)
+        self.progress_bar.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
         
         # Status atual
-        tk.Label(left_section, text="Status da Automação:", 
-                font=('Segoe UI', 14, 'bold'), fg=self.colors['light'], bg=self.colors['primary']).pack(anchor='w')
-        self.status_label = tk.Label(left_section, text="🟡 Aguardando Inicialização", 
-                                    font=('Segoe UI', 12), bg=self.colors['primary'], fg=self.colors['warning'])
-        self.status_label.pack(anchor='w', pady=(5, 15))
-        
-        # Informações de progresso
-        tk.Label(left_section, text="Progresso Geral:", 
-                font=('Segoe UI', 12, 'bold'), fg=self.colors['light'], bg=self.colors['primary']).pack(anchor='w')
-        self.progress_info_label = tk.Label(left_section, text="0 de 0 perfis processados", 
-                                          font=('Segoe UI', 10), bg=self.colors['primary'], fg=self.colors['accent'])
-        self.progress_info_label.pack(anchor='w')
-        
-        # CENTRO - Barra de progresso moderna
-        center_section = tk.Frame(control_container, bg=self.colors['primary'])
-        center_section.pack(side='left', fill='both', expand=True, padx=30)
-        
-        progress_container = tk.Frame(center_section, bg=self.colors['primary'])
-        progress_container.pack(expand=True, fill='y')
-        
-        # Estilo moderno da barra de progresso
-        style = ttk.Style()
-        style.configure('Modern.Horizontal.TProgressbar',
-                       background=self.colors['success'],
-                       troughcolor=self.colors['secondary'],
-                       borderwidth=0,
-                       lightcolor=self.colors['success'],
-                       darkcolor=self.colors['success'])
-        
-        tk.Label(progress_container, text="Progresso da Execução:", 
-                font=('Segoe UI', 12, 'bold'), fg=self.colors['light'], bg=self.colors['primary']).pack(pady=(20, 5))
-        
-        self.progress_bar = ttk.Progressbar(progress_container, 
-                                          style='Modern.Horizontal.TProgressbar',
-                                          mode='determinate', length=300)
-        self.progress_bar.pack(pady=10)
-        
-        self.progress_percentage = tk.Label(progress_container, text="0%", 
-                                           font=('Segoe UI', 12, 'bold'), 
-                                           fg=self.colors['success'], bg=self.colors['primary'])
-        self.progress_percentage.pack()
-        
-        # LADO DIREITO - Botões de controle (SEMPRE NO CANTO DIREITO)
-        right_section = tk.Frame(control_container, bg=self.colors['primary'])
-        right_section.pack(side='right', fill='y')
-        
-        # Container dos botões fixo no canto direito
-        buttons_container = tk.Frame(right_section, bg=self.colors['primary'])
-        buttons_container.pack(expand=True, fill='y')
-        
-        # BOTÃO INICIAR - SEMPRE VISÍVEL NO CANTO DIREITO
-        self.start_btn = tk.Button(buttons_container, text="▶️ INICIAR AUTOMAÇÃO", 
-                                  command=self.start_automation,
-                                  bg=self.colors['success'], fg=self.colors['light'], 
-                                  font=('Segoe UI', 14, 'bold'),
-                                  relief='flat', padx=30, pady=15, cursor='hand2',
-                                  borderwidth=0, width=20)
-        self.start_btn.pack(pady=(10, 5))
-        
-        # Botão Parar
-        self.stop_btn = tk.Button(buttons_container, text="⏹️ PARAR", 
-                                 command=self.stop_automation,
-                                 bg=self.colors['danger'], fg=self.colors['light'], 
-                                 font=('Segoe UI', 12, 'bold'),
-                                 relief='flat', padx=30, pady=10, cursor='hand2',
-                                 borderwidth=0, width=20, state='disabled')
-        self.stop_btn.pack(pady=5)
-        
-        # Botão Limpar Logs
-        clear_logs_btn = tk.Button(buttons_container, text="🗑️ Limpar Logs", 
-                                  command=self.clear_logs,
-                                  bg=self.colors['muted'], fg=self.colors['light'], 
-                                  font=('Segoe UI', 10, 'bold'),
-                                  relief='flat', padx=20, pady=8, cursor='hand2',
-                                  borderwidth=0, width=20)
-        clear_logs_btn.pack(pady=5)
-        
-        # ÁREA DE LOGS MODERNA
-        log_container = tk.Frame(main_container, bg=self.colors['light'])
-        log_container.pack(fill='both', expand=True, padx=15, pady=15)
-        
-        # Header dos logs
-        log_header = tk.Frame(log_container, bg=self.colors['secondary'], height=40)
-        log_header.pack(fill='x', padx=0, pady=0)
-        log_header.pack_propagate(False)
-        
-        log_title = tk.Label(log_header, text="📋 Logs de Execução em Tempo Real", 
-                            font=('Segoe UI', 12, 'bold'), 
-                            fg=self.colors['light'], bg=self.colors['secondary'])
-        log_title.pack(side='left', padx=15, pady=10)
-        
-        # Timestamp dos logs
-        self.log_timestamp = tk.Label(log_header, text="Última atualização: --:--:--", 
-                                     font=('Segoe UI', 9), 
-                                     fg=self.colors['accent'], bg=self.colors['secondary'])
-        self.log_timestamp.pack(side='right', padx=15, pady=10)
-        
-        # Área de logs com estilo moderno
-        log_frame = tk.Frame(log_container, bg=self.colors['light'])
-        log_frame.pack(fill='both', expand=True, padx=0, pady=0)
-        
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=25, 
-                                                 font=('Consolas', 10),
-                                                 bg=self.colors['dark'], 
-                                                 fg=self.colors['light'],
-                                                 insertbackground=self.colors['accent'],
-                                                 selectbackground=self.colors['accent'],
-                                                 wrap=tk.WORD)
-        self.log_text.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        # Configurar handler personalizado para logs
-        self.setup_log_handler()
-        
-        # Configurar cores para logs
-        self.setup_log_colors()
+        self.current_status_var = tk.StringVar(value="Pronto para iniciar")
+        ttk.Label(status_frame, textvariable=self.current_status_var, font=('Arial', 10, 'bold')).grid(row=2, column=0, pady=(5, 0))
     
-    def clear_logs(self):
-        """Limpar logs da interface"""
-        self.log_text.delete(1.0, tk.END)
-        self.log_timestamp.config(text="Logs limpos")
-        self.logger.info("🗑️ Logs da interface limpos pelo usuário")
+    def load_profiles(self):
+        """📋 CARREGAR perfis do AdsPower"""
+        self.log_status("🔄 Carregando perfis do AdsPower...")
+        
+        def load_in_thread():
+            try:
+                profiles = self.adspower_manager.get_profiles()
+                
+                # Atualizar interface na thread principal
+                self.root.after(0, self.update_profiles_list, profiles)
+                
+            except Exception as e:
+                error_msg = f"❌ Erro ao carregar perfis: {str(e)}"
+                self.root.after(0, self.log_status, error_msg)
+                self.logger.error(error_msg)
+        
+        # Executar em thread separada
+        threading.Thread(target=load_in_thread, daemon=True).start()
     
-    def setup_log_colors(self):
-        """Configurar cores para diferentes tipos de log"""
-        self.log_text.tag_configure('INFO', foreground=self.colors['light'])
-        self.log_text.tag_configure('WARNING', foreground=self.colors['warning'])
-        self.log_text.tag_configure('ERROR', foreground=self.colors['danger'])
-        self.log_text.tag_configure('SUCCESS', foreground=self.colors['success'])
-        self.log_text.tag_configure('DEBUG', foreground=self.colors['muted'])
-    
-    def setup_settings_tab(self, notebook):
-        """Configurar aba de configurações"""
-        settings_frame = ttk.Frame(notebook)
-        notebook.add(settings_frame, text="⚙️ Configurações")
-        
-        # Configurações do AdsPower
-        adspower_frame = tk.LabelFrame(settings_frame, text="AdsPower API", 
-                                      font=('Arial', 12, 'bold'), padx=10, pady=10)
-        adspower_frame.pack(fill='x', padx=10, pady=10)
-        
-        tk.Label(adspower_frame, text="URL da API:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
-        self.api_url_entry = tk.Entry(adspower_frame, width=40, font=('Arial', 10))
-        self.api_url_entry.insert(0, "http://localhost:50325")
-        self.api_url_entry.grid(row=0, column=1, padx=10, pady=5)
-        
-        # Configurações de automação
-        automation_frame = tk.LabelFrame(settings_frame, text="Automação", 
-                                        font=('Arial', 12, 'bold'), padx=10, pady=10)
-        automation_frame.pack(fill='x', padx=10, pady=10)
-        
-        tk.Label(automation_frame, text="Delay entre ações (segundos):", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
-        self.delay_entry = tk.Entry(automation_frame, width=10, font=('Arial', 10))
-        self.delay_entry.insert(0, "3")
-        self.delay_entry.grid(row=0, column=1, sticky='w', padx=10, pady=5)
-        
-        tk.Label(automation_frame, text="Timeout de página (segundos):", font=('Arial', 10)).grid(row=1, column=0, sticky='w', pady=5)
-        self.timeout_entry = tk.Entry(automation_frame, width=10, font=('Arial', 10))
-        self.timeout_entry.insert(0, "30")
-        self.timeout_entry.grid(row=1, column=1, sticky='w', padx=10, pady=5)
-        
-        # Modo headless
-        self.headless_var = tk.BooleanVar()
-        headless_check = tk.Checkbutton(automation_frame, text="Executar em modo invisível (headless)", 
-                                       variable=self.headless_var, font=('Arial', 10))
-        headless_check.grid(row=2, column=0, columnspan=2, sticky='w', pady=5)
-    
-    def setup_log_handler(self):
-        """Configurar handler personalizado para exibir logs na interface"""
-        class GuiLogHandler(logging.Handler):
-            def __init__(self, text_widget):
-                super().__init__()
-                self.text_widget = text_widget
-            
-            def emit(self, record):
-                msg = self.format(record)
-                def append():
-                    self.text_widget.insert(tk.END, msg + '\n')
-                    self.text_widget.see(tk.END)
-                self.text_widget.after(0, append)
-        
-        gui_handler = GuiLogHandler(self.log_text)
-        gui_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        self.logger.addHandler(gui_handler)
-    
-    def refresh_profiles(self):
-        """Atualizar lista de perfis do AdsPower com checkboxes"""
+    def update_profiles_list(self, profiles: List[Dict]):
+        """📋 ATUALIZAR lista de perfis na interface"""
         try:
-            profiles = self.adspower_manager.get_profiles()
             self.profiles = profiles
             
-            # Limpar checkboxes anteriores
-            for widget in self.profiles_scrollable_frame.winfo_children():
-                widget.destroy()
+            # Limpar lista atual
+            for item in self.profiles_tree.get_children():
+                self.profiles_tree.delete(item)
             
-            self.profile_vars.clear()
-            self.profile_checkboxes.clear()
+            # Adicionar perfis
+            for profile in profiles:
+                profile_id = profile.get('user_id', 'N/A')
+                profile_name = profile.get('name', 'Sem nome')
+                group_name = profile.get('group_name', 'Sem grupo')
+                status = 'Ativo' if profile.get('status') == 'Active' else 'Inativo'
+                
+                # Inserir na árvore
+                item_id = self.profiles_tree.insert('', 'end', values=(
+                    '☐',  # Checkbox vazio
+                    profile_name,
+                    profile_id,
+                    group_name,
+                    status
+                ))
+                
+                # Armazenar dados do perfil no item
+                self.profiles_tree.set(item_id, 'profile_data', json.dumps(profile))
             
-            # Criar checkboxes para cada perfil
-            for i, profile in enumerate(profiles):
-                # Criar variável para checkbox
-                var = tk.BooleanVar()
-                self.profile_vars[profile['user_id']] = var
-                
-                # Criar frame moderno para cada perfil
-                profile_frame = tk.Frame(self.profiles_scrollable_frame, bg=self.colors['light'], 
-                                       relief='solid', bd=1, highlightbackground=self.colors['accent'])
-                profile_frame.pack(fill='x', padx=8, pady=3)
-                
-                # Hover effect
-                def on_enter(event, frame=profile_frame):
-                    frame.config(bg=self.colors['accent'], relief='raised')
-                def on_leave(event, frame=profile_frame):
-                    frame.config(bg=self.colors['light'], relief='solid')
-                
-                profile_frame.bind('<Enter>', on_enter)
-                profile_frame.bind('<Leave>', on_leave)
-                
-                # Checkbox moderno
-                checkbox = tk.Checkbutton(profile_frame, 
-                                        text=f"👤 {profile['name']} (ID: {profile['user_id']})",
-                                        variable=var,
-                                        bg=self.colors['light'],
-                                        fg=self.colors['dark'],
-                                        font=('Segoe UI', 11),
-                                        anchor='w',
-                                        activebackground=self.colors['accent'],
-                                        activeforeground=self.colors['light'],
-                                        selectcolor=self.colors['success'],
-                                        command=self.on_profile_selected,
-                                        cursor='hand2')
-                checkbox.pack(fill='x', padx=15, pady=8)
-                
-                # Bind hover para checkbox também
-                checkbox.bind('<Enter>', on_enter)
-                checkbox.bind('<Leave>', on_leave)
-                
-                self.profile_checkboxes[profile['user_id']] = checkbox
-            
-            # Atualizar status e informações
-            self.profiles_status_label.config(text=f"✅ {len(profiles)} perfis carregados do AdsPower")
-            self.profiles_info_label.config(text=f"{len(profiles)} perfis disponíveis")
-            self.connection_status.config(text="✅ Conectado ao AdsPower", fg=self.colors['success'])
-            self.logger.info(f"Carregados {len(profiles)} perfis do AdsPower")
-            
-            # Carregar seleção salva automaticamente
-            self.load_profile_selection_auto()
+            self.log_status(f"✅ {len(profiles)} perfis carregados com sucesso!")
+            self.update_selected_count()
             
         except Exception as e:
-            self.profiles_status_label.config(text="❌ Erro ao carregar perfis")
-            self.profiles_info_label.config(text="Erro na conexão")
-            self.connection_status.config(text="❌ Desconectado", fg=self.colors['danger'])
-            messagebox.showerror("Erro", f"Erro ao carregar perfis: {str(e)}")
-            self.logger.error(f"Erro ao carregar perfis: {str(e)}")
+            error_msg = f"❌ Erro ao atualizar lista: {str(e)}"
+            self.log_status(error_msg)
+            self.logger.error(error_msg)
     
-    def update_selected_profiles(self):
-        """Atualizar perfis selecionados baseado nos checkboxes"""
-        self.selected_profiles = []
-        
-        for profile in self.profiles:
-            if self.profile_vars.get(profile['user_id'], tk.BooleanVar()).get():
-                self.selected_profiles.append(profile)
-    
-    def update_selected_count(self):
-        """Atualizar contador de perfis selecionados"""
-        # CORREÇÃO: Não chamar update_selected_profiles() aqui para evitar recursão
-        self.update_selected_profiles()  # Atualizar uma única vez
-        count = len(self.selected_profiles)
-        
-        # Atualizar contador no canto direito
-        if count > 0:
-            self.selected_count_label.config(text=f"🎯 {count} selecionados", fg=self.colors['success'])
-            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
-        else:
-            self.selected_count_label.config(text="Nenhum selecionado", fg=self.colors['warning'])
-            self.profiles_status_label.config(text=f"✅ {len(self.profiles)} perfis carregados")
-    
-    def filter_profiles(self, event=None):
-        """Filtrar perfis com base na busca"""
-        search_term = self.search_entry.get().lower()
-        
-        for profile in self.profiles:
-            checkbox = self.profile_checkboxes.get(profile['user_id'])
-            if checkbox:
-                profile_name = profile['name'].lower()
-                if search_term in profile_name or search_term in profile['user_id'].lower():
-                    checkbox.master.pack(fill='x', padx=5, pady=2)
+    def on_profile_click(self, event):
+        """🖱️ MANIPULAR clique em perfil"""
+        try:
+            item = self.profiles_tree.identify('item', event.x, event.y)
+            column = self.profiles_tree.identify('column', event.x, event.y)
+            
+            if item and column == '#1':  # Coluna de seleção
+                current_value = self.profiles_tree.item(item, 'values')[0]
+                
+                if current_value == '☐':
+                    # Marcar como selecionado
+                    values = list(self.profiles_tree.item(item, 'values'))
+                    values[0] = '☑'
+                    self.profiles_tree.item(item, values=values)
+                    
+                    # Adicionar à lista de selecionados
+                    profile_data = json.loads(self.profiles_tree.set(item, 'profile_data'))
+                    if profile_data not in self.selected_profiles:
+                        self.selected_profiles.append(profile_data)
                 else:
-                    checkbox.master.pack_forget()
+                    # Desmarcar
+                    values = list(self.profiles_tree.item(item, 'values'))
+                    values[0] = '☐'
+                    self.profiles_tree.item(item, values=values)
+                    
+                    # Remover da lista de selecionados
+                    profile_data = json.loads(self.profiles_tree.set(item, 'profile_data'))
+                    if profile_data in self.selected_profiles:
+                        self.selected_profiles.remove(profile_data)
+                
+                self.update_selected_count()
+                
+        except Exception as e:
+            self.logger.error(f"Erro no clique do perfil: {str(e)}")
+    
+    def on_profile_double_click(self, event):
+        """🖱️ MANIPULAR duplo clique em perfil"""
+        try:
+            item = self.profiles_tree.identify('item', event.x, event.y)
+            if item:
+                profile_data = json.loads(self.profiles_tree.set(item, 'profile_data'))
+                profile_name = profile_data.get('name', 'Sem nome')
+                profile_id = profile_data.get('user_id', 'N/A')
+                
+                messagebox.showinfo(
+                    "Informações do Perfil",
+                    f"Nome: {profile_name}\n"
+                    f"ID: {profile_id}\n"
+                    f"Grupo: {profile_data.get('group_name', 'Sem grupo')}\n"
+                    f"Status: {profile_data.get('status', 'Desconhecido')}"
+                )
+        except Exception as e:
+            self.logger.error(f"Erro no duplo clique: {str(e)}")
     
     def select_all_profiles(self):
-        """Selecionar todos os perfis visíveis"""
-        for user_id, var in self.profile_vars.items():
-            checkbox = self.profile_checkboxes.get(user_id)
-            if checkbox and checkbox.master.winfo_viewable():
-                var.set(True)
-        self.update_selected_profiles()
-        self.update_display_count()
+        """✅ SELECIONAR todos os perfis"""
+        try:
+            self.selected_profiles.clear()
+            
+            for item in self.profiles_tree.get_children():
+                # Marcar como selecionado
+                values = list(self.profiles_tree.item(item, 'values'))
+                values[0] = '☑'
+                self.profiles_tree.item(item, values=values)
+                
+                # Adicionar à lista
+                profile_data = json.loads(self.profiles_tree.set(item, 'profile_data'))
+                self.selected_profiles.append(profile_data)
+            
+            self.update_selected_count()
+            self.log_status("✅ Todos os perfis selecionados")
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao selecionar todos: {str(e)}")
     
     def deselect_all_profiles(self):
-        """Deselecionar todos os perfis"""
-        for var in self.profile_vars.values():
-            var.set(False)
-        self.update_selected_profiles()
-        self.update_display_count()
+        """❌ DESMARCAR todos os perfis"""
+        try:
+            self.selected_profiles.clear()
+            
+            for item in self.profiles_tree.get_children():
+                # Desmarcar
+                values = list(self.profiles_tree.item(item, 'values'))
+                values[0] = '☐'
+                self.profiles_tree.item(item, values=values)
+            
+            self.update_selected_count()
+            self.log_status("❌ Todos os perfis desmarcados")
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao desmarcar todos: {str(e)}")
     
-    def save_campaign_config(self):
-        """Salvar configuração da campanha"""
-        config = self.get_campaign_config()
-        
-        filename = filedialog.asksaveasfilename(
-            title="Salvar Configuração de Campanha",
-            defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        
-        if filename:
-            try:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=2, ensure_ascii=False)
-                messagebox.showinfo("Sucesso", "Configuração salva com sucesso!")
-                self.logger.info(f"Configuração salva em: {filename}")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao salvar: {str(e)}")
+    def filter_profiles(self, *args):
+        """🔍 FILTRAR perfis por busca"""
+        try:
+            search_term = self.search_var.get().lower()
+            
+            for item in self.profiles_tree.get_children():
+                values = self.profiles_tree.item(item, 'values')
+                profile_name = values[1].lower()
+                profile_id = values[2].lower()
+                
+                if search_term in profile_name or search_term in profile_id:
+                    self.profiles_tree.reattach(item, '', 'end')
+                else:
+                    self.profiles_tree.detach(item)
+                    
+        except Exception as e:
+            self.logger.error(f"Erro no filtro: {str(e)}")
     
-    def load_campaign_config(self):
-        """Carregar configuração da campanha"""
-        filename = filedialog.askopenfilename(
-            title="Carregar Configuração de Campanha",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        
-        if filename:
-            try:
-                with open(filename, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                self.set_campaign_config(config)
-                messagebox.showinfo("Sucesso", "Configuração carregada com sucesso!")
-                self.logger.info(f"Configuração carregada de: {filename}")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao carregar: {str(e)}")
-    
-    def get_campaign_config(self):
-        """Obter configuração atual da campanha"""
-        keywords = [k.strip() for k in self.keywords_text.get(1.0, tk.END).strip().split('\n') if k.strip()]
-        locations = [l.strip() for l in self.locations_text.get(1.0, tk.END).strip().split('\n') if l.strip()]
-        ad_titles = [t.strip() for t in self.ad_titles_text.get(1.0, tk.END).strip().split('\n') if t.strip()][:15]  # Máximo 15 títulos
-        ad_descriptions = [d.strip() for d in self.ad_descriptions_text.get(1.0, tk.END).strip().split('\n') if d.strip()][:4]  # Máximo 4 descrições
-        
-        return {
-            'campaign_name': self.campaign_name_entry.get(),
-            'budget': self.budget_entry.get(),
-            'campaign_type': 'Pesquisa',  # Sempre pesquisa
-            'language': self.language_combo.get(),
-            'keywords': keywords,
-            'locations': locations,
-            'ad_titles': ad_titles,
-            'ad_descriptions': ad_descriptions,
-            'landing_url': self.landing_url_entry.get(),
-            'delay': self.delay_entry.get(),
-            'timeout': self.timeout_entry.get(),
-            'headless': self.headless_var.get()
-        }
-    
-    def set_campaign_config(self, config):
-        """Definir configuração da campanha"""
-        self.campaign_name_entry.delete(0, tk.END)
-        self.campaign_name_entry.insert(0, config.get('campaign_name', ''))
-        
-        self.budget_entry.delete(0, tk.END)
-        self.budget_entry.insert(0, config.get('budget', ''))
-        
-        # Idioma
-        self.language_combo.set(config.get('language', 'Português (Brasil)'))
-        
-        # Palavras-chave
-        self.keywords_text.delete(1.0, tk.END)
-        self.keywords_text.insert(1.0, '\n'.join(config.get('keywords', [])))
-        
-        # Localizações múltiplas
-        self.locations_text.delete(1.0, tk.END)
-        locations = config.get('locations', config.get('location', 'Brasil'))  # Compatibilidade com versão antiga
-        if isinstance(locations, str):
-            self.locations_text.insert(1.0, locations)
-        else:
-            self.locations_text.insert(1.0, '\n'.join(locations))
-        
-        # Títulos múltiplos
-        self.ad_titles_text.delete(1.0, tk.END)
-        ad_titles = config.get('ad_titles', [config.get('ad_title', '')])  # Compatibilidade com versão antiga
-        if isinstance(ad_titles, str):
-            self.ad_titles_text.insert(1.0, ad_titles)
-        else:
-            self.ad_titles_text.insert(1.0, '\n'.join(ad_titles))
-        
-        # Descrições múltiplas
-        self.ad_descriptions_text.delete(1.0, tk.END)
-        ad_descriptions = config.get('ad_descriptions', [config.get('ad_description', '')])  # Compatibilidade com versão antiga
-        if isinstance(ad_descriptions, str):
-            self.ad_descriptions_text.insert(1.0, ad_descriptions)
-        else:
-            self.ad_descriptions_text.insert(1.0, '\n'.join(ad_descriptions))
-        
-        # URL de destino
-        self.landing_url_entry.delete(0, tk.END)
-        self.landing_url_entry.insert(0, config.get('landing_url', ''))
+    def update_selected_count(self):
+        """📊 ATUALIZAR contador de selecionados"""
+        count = len(self.selected_profiles)
+        self.selected_count_var.set(f"Selecionados: {count}")
     
     def start_automation(self):
-        """Iniciar automação"""
-        # CORREÇÃO DO BUG: Atualizar perfis selecionados antes da verificação
-        self.update_selected_profiles()
-        
-        if not self.selected_profiles:
-            messagebox.showwarning("⚠️ Aviso", "Selecione pelo menos um perfil do AdsPower!")
-            return
-        
-        config = self.get_campaign_config()
-        if not config['campaign_name'] or not config['keywords']:
-            messagebox.showwarning("Aviso", "Preencha pelo menos o nome da campanha e palavras-chave!")
-            return
-        
-        self.is_running = True
-        self.start_btn.config(state='disabled')
-        self.stop_btn.config(state='normal')
-        self.status_label.config(text="🟢 Executando", fg='#27ae60')
-        
-        # Executar automação em thread separada
-        automation_thread = threading.Thread(target=self.run_automation, args=(config,))
-        automation_thread.daemon = True
-        automation_thread.start()
+        """🚀 INICIAR automação"""
+        try:
+            # Validações
+            if not self.selected_profiles:
+                messagebox.showwarning("Aviso", "Selecione pelo menos um perfil!")
+                return
+            
+            if not self.campaign_name_var.get().strip():
+                messagebox.showwarning("Aviso", "Digite um nome para a campanha!")
+                return
+            
+            # Preparar configuração da campanha
+            self.campaign_config = {
+                'name': self.campaign_name_var.get().strip(),
+                'objective': self.objective_var.get(),
+                'budget': self.budget_var.get().strip(),
+                'locations': [loc.strip() for loc in self.locations_var.get().split(',')],
+                'titles': [title.strip() for title in self.titles_var.get().split(';')],
+                'final_url': self.final_url_var.get().strip()
+            }
+            
+            # Atualizar interface
+            self.automation_running = True
+            self.start_button.config(state='disabled')
+            self.stop_button.config(state='normal')
+            self.progress_var.set(0)
+            self.current_status_var.set("Iniciando automação...")
+            
+            # Iniciar thread de automação
+            self.automation_thread = threading.Thread(target=self.run_automation, daemon=True)
+            self.automation_thread.start()
+            
+            self.log_status("🚀 Automação iniciada!")
+            
+        except Exception as e:
+            error_msg = f"❌ Erro ao iniciar automação: {str(e)}"
+            self.log_status(error_msg)
+            self.logger.error(error_msg)
     
     def stop_automation(self):
-        """Parar automação"""
-        self.is_running = False
-        self.start_btn.config(state='normal')
-        self.stop_btn.config(state='disabled')
-        self.status_label.config(text="🔴 Parado", fg='#e74c3c')
-        self.logger.info("Automação interrompida pelo usuário")
-    
-    def run_automation(self, config):
-        """Executar automação em todos os perfis selecionados"""
-        total_profiles = len(self.selected_profiles)
-        
+        """⏹️ PARAR automação"""
         try:
+            self.automation_running = False
+            self.current_status_var.set("Parando automação...")
+            self.log_status("⏹️ Parando automação...")
+            
+            # Aguardar thread terminar
+            if self.automation_thread and self.automation_thread.is_alive():
+                self.automation_thread.join(timeout=5)
+            
+            # Resetar interface
+            self.start_button.config(state='normal')
+            self.stop_button.config(state='disabled')
+            self.current_status_var.set("Automação parada")
+            
+            self.log_status("✅ Automação parada com sucesso!")
+            
+        except Exception as e:
+            error_msg = f"❌ Erro ao parar automação: {str(e)}"
+            self.log_status(error_msg)
+            self.logger.error(error_msg)
+    
+    def run_automation(self):
+        """🤖 EXECUTAR automação principal"""
+        try:
+            total_profiles = len(self.selected_profiles)
+            successful_campaigns = 0
+            failed_campaigns = 0
+            
+            self.root.after(0, self.log_status, f"🎯 Iniciando automação para {total_profiles} perfis...")
+            
             for i, profile in enumerate(self.selected_profiles):
-                if not self.is_running:
+                if not self.automation_running:
                     break
                 
-                self.logger.info(f"Iniciando automação no perfil: {profile['name']}")
+                profile_name = profile.get('name', 'Sem nome')
+                profile_id = profile.get('user_id', 'N/A')
                 
                 # Atualizar progresso
                 progress = (i / total_profiles) * 100
-                self.progress_bar.config(value=progress)
+                self.root.after(0, self.progress_var.set, progress)
+                self.root.after(0, self.current_status_var.set, f"Processando: {profile_name}")
+                self.root.after(0, self.log_status, f"🔄 Processando perfil: {profile_name} ({i+1}/{total_profiles})")
                 
-                browser_info = None
                 try:
-                    # 1. Iniciar browser do AdsPower para este perfil
-                    self.logger.info(f"Iniciando browser AdsPower para perfil: {profile['name']}")
-                    browser_info = self.adspower_manager.start_browser(profile['user_id'])
+                    # Iniciar browser no AdsPower
+                    self.root.after(0, self.log_status, f"🚀 Iniciando browser para: {profile_name}")
+                    browser_info = self.adspower_manager.start_browser(profile_id)
                     
                     if not browser_info:
-                        self.logger.error(f"Falha ao iniciar browser para perfil: {profile['name']}")
+                        self.root.after(0, self.log_status, f"❌ Falha ao iniciar browser: {profile_name}")
+                        failed_campaigns += 1
                         continue
                     
-                    # 2. Aguardar browser inicializar e LOG DETALHADO
-                    self.logger.info(f"📋 INFORMAÇÕES DETALHADAS do browser: {browser_info}")
-                    time.sleep(5)
+                    # Criar automação
+                    automation = GoogleAdsAutomation(self.adspower_manager, profile_name)
                     
-                    # 3. EXECUTAR AUTOMAÇÃO com logs detalhados
-                    self.logger.info(f"🚀 INICIANDO automação para perfil: {profile['name']}")
-                    success = self.automation.create_campaign_with_browser(profile, config, browser_info)
-                    self.logger.info(f"📊 RESULTADO da automação: {'SUCESSO' if success else 'FALHA'}")
+                    # Configurar WebDriver
+                    self.root.after(0, self.log_status, f"🔧 Configurando WebDriver: {profile_name}")
+                    if not automation.setup_webdriver(browser_info):
+                        self.root.after(0, self.log_status, f"❌ Falha na configuração do WebDriver: {profile_name}")
+                        failed_campaigns += 1
+                        continue
                     
-                    if success:
-                        self.logger.info(f"🎉 SUCESSO TOTAL: Campanha criada no perfil: {profile['name']}")
+                    # Criar campanha
+                    self.root.after(0, self.log_status, f"📋 Criando campanha: {profile_name}")
+                    if automation.create_campaign(self.campaign_config):
+                        self.root.after(0, self.log_status, f"✅ Campanha criada com sucesso: {profile_name}")
+                        successful_campaigns += 1
                     else:
-                        self.logger.error(f"💥 FALHA CRÍTICA: Não foi possível criar campanha no perfil: {profile['name']}")
-                        self.logger.error(f"🔍 Verifique os logs detalhados acima para identificar o problema")
-                        
-                except Exception as e:
-                    self.logger.error(f"❌ Erro no perfil {profile['name']}: {str(e)}")
+                        self.root.after(0, self.log_status, f"❌ Falha na criação da campanha: {profile_name}")
+                        failed_campaigns += 1
+                    
+                    # Limpeza
+                    automation.cleanup()
+                    
+                    # Aguardar entre perfis
+                    if i < total_profiles - 1:  # Não aguardar no último
+                        self.root.after(0, self.log_status, f"⏳ Aguardando 5s antes do próximo perfil...")
+                        time.sleep(5)
                 
-                finally:
-                    # 4. Sempre fechar o browser do perfil ao final
-                    if browser_info:
-                        try:
-                            self.adspower_manager.stop_browser(profile['user_id'])
-                            self.logger.info(f"Browser fechado para perfil: {profile['name']}")
-                        except Exception as e:
-                            self.logger.warning(f"Erro ao fechar browser do perfil {profile['name']}: {str(e)}")
-                
-                # Atualizar progresso final para este perfil
-                progress = ((i + 1) / total_profiles) * 100
-                self.progress_bar.config(value=progress)
+                except Exception as profile_error:
+                    error_msg = f"❌ Erro no perfil {profile_name}: {str(profile_error)}"
+                    self.root.after(0, self.log_status, error_msg)
+                    self.logger.error(f"Erro no perfil {profile_name}: {traceback.format_exc()}")
+                    failed_campaigns += 1
             
-            if self.is_running:
-                self.logger.info("🎉 Automação concluída em todos os perfis!")
-                messagebox.showinfo("Concluído", "Automação finalizada com sucesso!")
+            # Finalizar automação
+            self.root.after(0, self.progress_var.set, 100)
+            self.root.after(0, self.current_status_var.set, "Automação concluída")
+            
+            # Relatório final
+            final_report = f"🎉 AUTOMAÇÃO CONCLUÍDA!\n"
+            final_report += f"✅ Sucessos: {successful_campaigns}\n"
+            final_report += f"❌ Falhas: {failed_campaigns}\n"
+            final_report += f"📊 Total processado: {successful_campaigns + failed_campaigns}/{total_profiles}"
+            
+            self.root.after(0, self.log_status, final_report)
+            
+            # Resetar interface
+            self.root.after(0, self.reset_automation_interface)
             
         except Exception as e:
-            self.logger.error(f"Erro geral na automação: {str(e)}")
-            messagebox.showerror("Erro", f"Erro na automação: {str(e)}")
-        
-        finally:
-            # Resetar interface
-            self.is_running = False
-            self.start_btn.config(state='normal')
-            self.stop_btn.config(state='disabled')
-            self.status_label.config(text="🟡 Aguardando", fg='#f39c12')
-            if self.progress_bar['value'] == 100:
-                self.progress_bar.config(value=0)
+            error_msg = f"💥 Erro crítico na automação: {str(e)}"
+            self.root.after(0, self.log_status, error_msg)
+            self.logger.error(f"Erro crítico: {traceback.format_exc()}")
+            self.root.after(0, self.reset_automation_interface)
+    
+    def reset_automation_interface(self):
+        """🔄 RESETAR interface após automação"""
+        self.automation_running = False
+        self.start_button.config(state='normal')
+        self.stop_button.config(state='disabled')
+        self.current_status_var.set("Pronto para nova automação")
+    
+    def log_status(self, message: str):
+        """📝 ADICIONAR mensagem ao log de status"""
+        try:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            formatted_message = f"[{timestamp}] {message}\n"
+            
+            self.status_text.insert(tk.END, formatted_message)
+            self.status_text.see(tk.END)
+            
+            # Limitar tamanho do log
+            lines = self.status_text.get("1.0", tk.END).split('\n')
+            if len(lines) > 1000:
+                self.status_text.delete("1.0", f"{len(lines)-500}.0")
+            
+            # Log também no arquivo
+            self.logger.info(message)
+            
+        except Exception as e:
+            self.logger.error(f"Erro no log de status: {str(e)}")
+    
+    def save_config(self):
+        """💾 SALVAR configuração"""
+        try:
+            config_data = {
+                'campaign_name': self.campaign_name_var.get(),
+                'objective': self.objective_var.get(),
+                'budget': self.budget_var.get(),
+                'locations': self.locations_var.get(),
+                'titles': self.titles_var.get(),
+                'final_url': self.final_url_var.get(),
+                'selected_profiles': [p.get('user_id') for p in self.selected_profiles]
+            }
+            
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            )
+            
+            if filename:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, indent=2, ensure_ascii=False)
+                
+                self.log_status(f"💾 Configuração salva: {filename}")
+                messagebox.showinfo("Sucesso", "Configuração salva com sucesso!")
+                
+        except Exception as e:
+            error_msg = f"❌ Erro ao salvar configuração: {str(e)}"
+            self.log_status(error_msg)
+            messagebox.showerror("Erro", error_msg)
+    
+    def load_config(self):
+        """📂 CARREGAR configuração"""
+        try:
+            filename = filedialog.askopenfilename(
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            )
+            
+            if filename:
+                with open(filename, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                
+                # Aplicar configurações
+                self.campaign_name_var.set(config_data.get('campaign_name', ''))
+                self.objective_var.set(config_data.get('objective', 'Vendas'))
+                self.budget_var.set(config_data.get('budget', '50'))
+                self.locations_var.set(config_data.get('locations', 'Brasil'))
+                self.titles_var.set(config_data.get('titles', ''))
+                self.final_url_var.set(config_data.get('final_url', ''))
+                
+                self.log_status(f"📂 Configuração carregada: {filename}")
+                messagebox.showinfo("Sucesso", "Configuração carregada com sucesso!")
+                
+        except Exception as e:
+            error_msg = f"❌ Erro ao carregar configuração: {str(e)}"
+            self.log_status(error_msg)
+            messagebox.showerror("Erro", error_msg)
+    
+    def show_logs(self):
+        """📊 MOSTRAR logs detalhados"""
+        try:
+            logs_dir = "logs"
+            if os.path.exists(logs_dir):
+                # Abrir pasta de logs
+                import subprocess
+                import platform
+                
+                if platform.system() == "Windows":
+                    subprocess.run(["explorer", logs_dir])
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", logs_dir])
+                else:  # Linux
+                    subprocess.run(["xdg-open", logs_dir])
+                
+                self.log_status("📊 Pasta de logs aberta")
+            else:
+                messagebox.showinfo("Info", "Pasta de logs não encontrada")
+                
+        except Exception as e:
+            error_msg = f"❌ Erro ao abrir logs: {str(e)}"
+            self.log_status(error_msg)
+            messagebox.showerror("Erro", error_msg)
+    
+    def run(self):
+        """🏃 EXECUTAR aplicação"""
+        try:
+            self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+            self.root.mainloop()
+        except Exception as e:
+            self.logger.error(f"Erro na execução: {str(e)}")
+    
+    def on_closing(self):
+        """🚪 MANIPULAR fechamento da aplicação"""
+        try:
+            if self.automation_running:
+                if messagebox.askokcancel("Sair", "Automação em andamento. Deseja realmente sair?"):
+                    self.stop_automation()
+                    self.root.destroy()
+            else:
+                self.root.destroy()
+        except Exception as e:
+            self.logger.error(f"Erro no fechamento: {str(e)}")
+            self.root.destroy()
 
 def main():
-    """Função principal"""
-    root = tk.Tk()
-    app = GoogleAdsCampaignBot(root)
-    
-    # Configurar ícone da janela (se disponível)
+    """🚀 FUNÇÃO PRINCIPAL"""
     try:
-        root.iconbitmap('icon.ico')
-    except:
-        pass
-    
-    root.mainloop()
+        # Configurar logging
+        logger = setup_logger()
+        logger.info("="*50)
+        logger.info("🚀 INICIANDO Google Ads Campaign Bot")
+        logger.info("="*50)
+        
+        # Criar e executar aplicação
+        app = GoogleAdsCampaignBot()
+        app.run()
+        
+        logger.info("👋 Aplicação finalizada")
+        
+    except Exception as e:
+        print(f"💥 Erro crítico na inicialização: {str(e)}")
+        print(f"📚 Traceback: {traceback.format_exc()}")
 
 if __name__ == "__main__":
     main()
